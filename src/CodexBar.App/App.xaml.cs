@@ -208,6 +208,11 @@ public partial class App : Application
                     $"{window.Title} is back to {UsageFormatter.Percent(window.UsedPercent)} used.",
                     warning: false);
                 break;
+            case AlertKind.Outage:
+                tray?.Notify(
+                    $"{alert.ProviderName} is reporting an incident",
+                    string.IsNullOrEmpty(alert.Detail) ? "Open CodexBar for the outage hub." : alert.Detail);
+                break;
             case AlertKind.SignInExpired:
                 tray?.Notify(
                     $"{alert.ProviderName} sign-in expired",
@@ -239,7 +244,8 @@ public partial class App : Application
         this.popup?.SetCards(
             states.Select(entry => ProviderCard.From(entry.Provider, entry.State, now, this.Resources, options, this.store.History)).ToList(),
             refreshing ? "Refreshing…" : $"Refreshes every {this.config.RefreshSeconds / 60} min",
-            refreshing);
+            refreshing,
+            this.config.Current.OutageHub ? OutageRow.Build(states, this.store.Outages, this.Resources) : null);
         this.UpdateTrays(states);
     }
 
@@ -332,11 +338,14 @@ public partial class App : Application
             DateTimeOffset now;
             HistoryStore history;
             var options = new CardOptions(ShowPace: true, ShowHistory: true, ShowCost: true);
+            List<OutageRow>? outageRows;
+            var outageLog = new StringBuilder();
             if (demo)
             {
                 now = DateTimeOffset.UtcNow;
                 states = DemoData.States(now);
                 history = DemoData.History(states, now);
+                outageRows = OutageRow.Build(states, DemoData.Outages(now), this.Resources);
             }
             else
             {
@@ -347,13 +356,25 @@ public partial class App : Application
                 states = this.store.EnabledProviders().Select(p => (p, this.store.State(p.Id))).ToList();
                 history = this.store.History;
                 options = CardOptions.From(this.config.Current);
+                outageRows = this.config.Current.OutageHub ? OutageRow.Build(states, this.store.Outages, this.Resources) : null;
+                foreach (var reading in this.store.Outages)
+                {
+                    outageLog.AppendLine($"outage {reading.Source.Id}: {reading.Status?.Indicator.ToString() ?? "unknown"} {reading.Status?.Description}");
+                }
+            }
+
+            if (Environment.GetCommandLineArgs().Contains("--hub-only"))
+            {
+                // For a screenshot of the outage hub card on its own.
+                states = [];
             }
 
             var window = new PopupWindow();
             window.SetCards(
                 states.Select(entry => ProviderCard.From(entry.Provider, entry.State, now, this.Resources, options, history)).ToList(),
                 "Refreshes every 5 min",
-                refreshing: false);
+                refreshing: false,
+                outages: outageRows);
             window.RenderToPng(path);
 
             var summary = new StringBuilder();
@@ -379,7 +400,7 @@ public partial class App : Application
                 }
             }
 
-            File.WriteAllText(Path.ChangeExtension(path, ".txt"), summary.ToString());
+            File.WriteAllText(Path.ChangeExtension(path, ".txt"), summary.ToString() + outageLog);
             this.Shutdown(0);
         }
         catch (Exception error)
@@ -466,6 +487,18 @@ internal static class DemoData
             (new GeminiProvider(), new ProviderState("gemini", gemini, null, null, false)),
             (new GrokProvider(), new ProviderState("grok", grok, null, null, false)),
         ];
+    }
+
+    /// <summary>Made-up outage hub readings: one incident, the rest healthy.</summary>
+    public static List<OutageReading> Outages(DateTimeOffset now)
+    {
+        var sources = OutageHub.DefaultSources;
+        return sources.Select(source => new OutageReading(source, source.Id switch
+        {
+            "aws" => new ProviderStatus(StatusIndicator.Major, "Amazon EC2, N. Virginia: Increased Error Rates", now.AddMinutes(-25)),
+            "m365" => new ProviderStatus(StatusIndicator.Minor, "Outlook.com: Users may be unable to send email", now.AddMinutes(-40)),
+            _ => new ProviderStatus(StatusIndicator.None, null, now),
+        })).ToList();
     }
 
     /// <summary>A plausible week of readings ending at each window's current value, so trend lines can be drawn.</summary>

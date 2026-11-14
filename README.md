@@ -23,14 +23,14 @@
 
 ---
 
-CodexBar.Net is a native **Windows notification-area app** that shows how much of your **Codex, Claude, Cursor, Gemini, Copilot, Grok and OpenRouter** limits you have used, when each one resets, and whether you will run out first. It is a C#/.NET rewrite of the core of [CodexBar](https://github.com/steipete/CodexBar), the macOS menu bar app by Peter Steinberger. It needs no Swift toolchain, no WSL and no CLI wrapper: one `CodexBar.exe`.
+CodexBar.Net is a native **Windows notification-area app** that shows how much of your **Codex, Claude, Cursor, Gemini, Copilot, Grok and OpenRouter** limits you have used, when each one resets, and whether you will run out first. Its **outage hub** also watches Azure, AWS, Google Cloud, Microsoft 365, Cloudflare and GitHub, so one click tells you what is down. It is a C#/.NET rewrite of the core of [CodexBar](https://github.com/steipete/CodexBar), the macOS menu bar app by Peter Steinberger. It needs no Swift toolchain, no WSL and no CLI wrapper: one `CodexBar.exe`.
 
 <p align="center">
   <img src="docs/images/popup-dark.png" alt="CodexBar.Net popup in dark mode showing Codex, Claude, Cursor, Gemini and Grok cards with usage bars, trend lines, pace and cost estimates" width="340" />
   &nbsp;&nbsp;
   <img src="docs/images/popup-light.png" alt="The same popup in light mode" width="340" />
 </p>
-<p align="center"><em>One card per provider — limits, reset countdowns, pace, trend lines, incidents and estimated spend (demo data)</em></p>
+<p align="center"><em>One card per provider, plus the outage hub — limits, resets, pace, trend lines, incidents and estimated spend (demo data)</em></p>
 
 ## How It Works
 
@@ -65,6 +65,13 @@ CodexBar.Net reuses the sign-ins you already have. It reads the credential file 
 - An incident appears on the affected card and adds an attention dot to the tray icon, so a failed refresh explains itself
 - Click the status line to open the provider's status page
 
+### Outage Hub ![New](https://img.shields.io/badge/New-green)
+- **Is it me or is it them?** — one card lists every watched service, with open incidents sorted to the top
+- **Cloud and productivity platforms** — Microsoft Azure, Amazon Web Services, Google Cloud, Microsoft 365, Cloudflare and GitHub, next to your AI providers
+- **Add your own** — paste any Statuspage address (for example `status.stripe.com`) in Settings
+- **Incident alerts** — optional notification when a healthy service starts reporting an incident
+- Every feed is public and unauthenticated; click a row to open that service's status page
+
 ### Local Cost Estimate
 - Scans the session logs **Codex** and **Claude Code** already write on your PC and shows tokens and estimated API value for today and the last 30 days
 - Prices come from the public [models.dev](https://models.dev) catalog, cached for a day, with a bundled table as the offline fallback
@@ -85,14 +92,19 @@ CodexBar.Net reuses the sign-ins you already have. It reads the credential file 
 - **Read-only by default** — CLI credential files are read and never rewritten
 - **Optional sign-in renewal** — off by default; when on, an expired Codex or Claude token is renewed and written back so the CLI stays signed in
 - **Encrypted secrets** — API keys, pasted cookies and the GitHub token are encrypted with Windows DPAPI for your user account
-- **No telemetry** — requests go only to each provider's own endpoints, their status pages and the models.dev price list
+- **No telemetry** — requests go only to each provider's own endpoints, public status feeds and the models.dev price list
 
 ## Screenshots
 
 <p align="center">
-  <img src="docs/images/settings.png" alt="CodexBar.Net settings showing general, popup, notification, sign-in renewal and provider sections" width="460" />
+  <img src="docs/images/outage-hub.png" alt="CodexBar.Net outage hub listing AWS, Claude and Microsoft 365 incidents above operational services" width="360" />
 </p>
-<p align="center"><em>Settings — refresh interval, tray behavior, what the popup shows, notifications and every provider</em></p>
+<p align="center"><em>Outage hub — open incidents first, then everything that is healthy (demo data)</em></p>
+
+<p align="center">
+  <img src="docs/images/settings.png" alt="CodexBar.Net settings showing general, popup, notification, sign-in renewal, outage hub and provider sections" width="460" />
+</p>
+<p align="center"><em>Settings — refresh interval, tray behavior, what the popup shows, notifications, outage hub sources and every provider</em></p>
 
 ## Supported Providers
 
@@ -107,6 +119,19 @@ CodexBar.Net reuses the sign-ins you already have. It reads the credential file 
 | **OpenRouter** | API key from Settings or `OPENROUTER_API_KEY` | Balance, account usage, key limit | link only |
 
 A provider turns on by itself when its sign-in is found. Settings can switch any of them on or off.
+
+### Outage Hub Sources
+
+| Service | Public feed | What counts as an incident |
+|---------|-------------|----------------------------|
+| **Microsoft Azure** | Azure status RSS | Any item in the feed |
+| **Amazon Web Services** | AWS Health current events | Any current event; a disruption is shown as a major outage |
+| **Google Cloud** | Google Cloud incident history | Incidents without an end time |
+| **Microsoft 365** | Microsoft service health posts (consumer services) | Posts that are not operational or restored |
+| **Cloudflare**, **GitHub** | Statuspage | The page's own indicator |
+| **Your own** | Any Statuspage site | The page's own indicator |
+
+> **Microsoft 365 note:** the public feed covers consumer services such as Outlook.com, OneDrive and Teams. Tenant-specific service health needs an admin sign-in and is not read.
 
 > **Gemini note:** Google stopped serving Gemini CLI sign-in for individual, AI Pro and Ultra accounts in June 2026. Workspace, education and Code Assist Standard/Enterprise accounts still work; CodexBar.Net says so plainly when it meets a consumer account.
 
@@ -153,6 +178,7 @@ CodexBar.Windows.sln
 │   ├── Providers/           one file per provider, each with a pure ParseUsage function
 │   ├── UsageStore           refresh loop, provider states, alerts
 │   ├── StatusFetcher        Statuspage and Google Workspace incident feeds
+│   ├── OutageHub            Azure, AWS, Google Cloud, Microsoft 365 and Statuspage sources
 │   ├── Pace · HistoryStore  burn-rate projection and trend samples
 │   ├── CostScanner          local Codex / Claude Code log scan
 │   ├── PriceCatalog         models.dev price cache
@@ -169,7 +195,7 @@ CodexBar.Windows.sln
 | UI | WPF (popup, Settings), Windows Forms `NotifyIcon` (tray) |
 | Secret storage | Windows DPAPI, current user |
 | Cursor sign-in | Read-only SQLite through Windows' built-in `winsqlite3.dll` |
-| Tests | xunit, 61 tests |
+| Tests | xunit, 67 tests |
 | NuGet dependencies | None beyond the test framework |
 
 ## What Has Been Verified
@@ -179,7 +205,7 @@ CodexBar.Net is young. Being straight about what has and has not been exercised:
 | Area | State |
 |------|-------|
 | Claude and Codex usage | Run against real accounts |
-| Provider status, pace, cost scan | Run against real data |
+| Provider status, outage hub, pace, cost scan | Run against real data |
 | Cursor, Gemini, Grok, Copilot, OpenRouter | Covered by tests with stubbed responses; not yet run against a real account |
 | Sign-in renewal | Covered by tests only; treat as experimental |
 | Notifications, per-provider tray icons | Built, lightly exercised |
@@ -195,7 +221,7 @@ The macOS CodexBar supports about 110 providers and much more. This port does no
 - Credential files that belong to other tools are read only, unless you switch on sign-in renewal.
 - Settings, history and the price cache live in `%APPDATA%\CodexBar`. Secrets there are DPAPI-encrypted.
 - No browser cookies are read from disk. A Cursor cookie is used only if you paste one.
-- Network requests go to each enabled provider's usage endpoint, the status pages listed above, and `models.dev` for list prices.
+- Network requests go to each enabled provider's usage endpoint, the public status feeds listed above, and `models.dev` for list prices.
 
 ## Credits
 

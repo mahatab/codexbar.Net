@@ -119,6 +119,40 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <Border x:Name="OutageCard" Background="{DynamicResource Card}" CornerRadius="8"
+                            Padding="12,10,12,10" Margin="0,0,0,8" BorderBrush="{DynamicResource Line}"
+                            BorderThickness="1" Visibility="Collapsed">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock x:Name="OutageSummary" DockPanel.Dock="Right" FontSize="11"
+                                           VerticalAlignment="Center" Foreground="{DynamicResource FgDim}" />
+                                <TextBlock Text="Outage hub" FontWeight="SemiBold" FontSize="14"
+                                           Foreground="{DynamicResource Fg}" />
+                            </DockPanel>
+                            <ItemsControl x:Name="Outages" Focusable="False" Margin="0,4,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,5,0,0" Cursor="Hand" Background="Transparent"
+                                                    Tag="{Binding Url}" MouseLeftButtonUp="OnOutage"
+                                                    ToolTip="Open the status page">
+                                            <DockPanel>
+                                                <Ellipse DockPanel.Dock="Left" Width="8" Height="8" Margin="0,1,8,0"
+                                                         VerticalAlignment="Center" Fill="{Binding Dot}" />
+                                                <TextBlock DockPanel.Dock="Right" Text="{Binding State}" FontSize="12"
+                                                           Foreground="{Binding StateBrush}" />
+                                                <TextBlock Text="{Binding Name}" FontSize="12"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource Fg}" />
+                                            </DockPanel>
+                                            <TextBlock Text="{Binding Detail}" FontSize="11" Margin="16,2,0,0"
+                                                       TextWrapping="Wrap" Foreground="{DynamicResource FgDim}"
+                                                       Visibility="{Binding DetailVisibility}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
         </DockPanel>

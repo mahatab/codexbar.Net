@@ -58,6 +58,10 @@ public partial class SettingsWindow : Window
         this.NotifyResetBox.IsChecked = current.NotifyReset;
         this.NotifySignInBox.IsChecked = current.NotifySignInExpired;
         this.RefreshTokensBox.IsChecked = current.RefreshTokens;
+        this.OutageHubBox.IsChecked = current.OutageHub;
+        this.NotifyOutagesBox.IsChecked = current.NotifyOutages;
+        this.CustomPagesBox.Text = string.Join(Environment.NewLine, current.CustomStatusPages);
+        this.BuildOutageSources();
         this.ConfigPath.Text = $"Settings file: {configPath}";
         if (config.LoadError is { } error)
         {
@@ -281,7 +285,56 @@ public partial class SettingsWindow : Window
             config.NotifyReset = this.NotifyResetBox.IsChecked == true;
             config.NotifySignInExpired = this.NotifySignInBox.IsChecked == true;
             config.RefreshTokens = this.RefreshTokensBox.IsChecked == true;
+            config.OutageHub = this.OutageHubBox.IsChecked == true;
+            config.NotifyOutages = this.NotifyOutagesBox.IsChecked == true;
         });
+        this.changed();
+    }
+
+    /// <summary>One switch per outage source, including any custom status pages.</summary>
+    private void BuildOutageSources()
+    {
+        this.OutageSourceList.Children.Clear();
+        var switches = this.config.Current.OutageSources;
+        foreach (var source in this.config.AllOutageSources())
+        {
+            var box = new CheckBox
+            {
+                Content = source.Name,
+                IsChecked = !switches.TryGetValue(source.Id, out var enabled) || enabled,
+                Margin = new Thickness(0, 8, 18, 0),
+                Foreground = (Brush)this.FindResource("Fg"),
+            };
+            void Save(bool value)
+            {
+                this.config.Update(config => config.OutageSources[source.Id] = value);
+                this.changed();
+            }
+
+            box.Checked += (_, _) => Save(true);
+            box.Unchecked += (_, _) => Save(false);
+            this.OutageSourceList.Children.Add(box);
+        }
+    }
+
+    private void OnCustomPagesChanged(object sender, RoutedEventArgs e)
+    {
+        // Keep only addresses that parse as https Statuspage sites, and echo them back normalized.
+        var pages = this.CustomPagesBox.Text
+            .Split(['\r', '\n', ',', ';', ' '], StringSplitOptions.RemoveEmptyEntries)
+            .Select(OutageHub.CustomSource)
+            .OfType<OutageSource>()
+            .DistinctBy(source => source.Id)
+            .Select(source => source.PageUrl)
+            .ToList();
+        if (pages.SequenceEqual(this.config.Current.CustomStatusPages))
+        {
+            return;
+        }
+
+        this.config.Update(config => config.CustomStatusPages = pages);
+        this.CustomPagesBox.Text = string.Join(Environment.NewLine, pages);
+        this.BuildOutageSources();
         this.changed();
     }
 

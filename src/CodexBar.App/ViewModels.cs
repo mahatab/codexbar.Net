@@ -16,6 +16,61 @@ public sealed record WindowRow(string Title, string PercentText, double Used, Br
     public Visibility TrendVisibility => this.Trend is null ? Visibility.Collapsed : Visibility.Visible;
 }
 
+/// <summary>One service in the outage hub card.</summary>
+public sealed record OutageRow(string Name, string State, string Detail, Brush Dot, Brush StateBrush, string Url, bool IsIncident)
+{
+    public Visibility DetailVisibility => this.Detail.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <summary>
+    /// The hub's rows: AI providers that have a status reading, then the cloud sources. Services with an open
+    /// incident come first, worst first, so the card answers "what is down?" at a glance.
+    /// </summary>
+    public static List<OutageRow> Build(
+        IEnumerable<(IUsageProvider Provider, ProviderState State)> providers,
+        IReadOnlyList<OutageReading> readings,
+        ResourceDictionary resources)
+    {
+        var entries = new List<(string Name, ProviderStatus? Status, string Url)>();
+        foreach (var (provider, state) in providers)
+        {
+            if (state.Status is not null && provider.StatusLinkUrl is { } link)
+            {
+                entries.Add((provider.DisplayName, state.Status, link));
+            }
+        }
+
+        // GitHub's status already appears as Copilot when that provider is on.
+        var shown = entries.Select(entry => entry.Url.TrimEnd('/')).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        entries.AddRange(readings
+            .Where(reading => !shown.Contains(reading.Source.PageUrl.TrimEnd('/')))
+            .Select(reading => (reading.Source.Name, reading.Status, reading.Source.PageUrl)));
+
+        return entries
+            .Select((entry, index) => (entry, index))
+            .OrderByDescending(item => item.entry.Status?.IsIncident == true ? (int)item.entry.Status.Indicator : 0)
+            .ThenBy(item => item.index)
+            .Select(item => From(item.entry.Name, item.entry.Status, item.entry.Url, resources))
+            .ToList();
+    }
+
+    private static OutageRow From(string name, ProviderStatus? status, string url, ResourceDictionary resources)
+    {
+        var dim = (Brush)resources["FgDim"];
+        if (status is null)
+        {
+            return new OutageRow(name, "Unknown", string.Empty, (Brush)resources["Track"], dim, url, false);
+        }
+
+        if (!status.IsIncident)
+        {
+            return new OutageRow(name, "Operational", string.Empty, (Brush)resources["Accent"], dim, url, false);
+        }
+
+        var brush = (Brush)resources[status.Indicator is StatusIndicator.Major or StatusIndicator.Critical ? "Danger" : "Warn"];
+        return new OutageRow(name, StatusFetcher.Label(status.Indicator), status.Description ?? string.Empty, brush, brush, url, true);
+    }
+}
+
 /// <summary>What the popup shows beyond the raw readings; mirrors the Settings switches.</summary>
 public sealed record CardOptions(bool ShowPace, bool ShowHistory, bool ShowCost)
 {
@@ -159,7 +214,8 @@ public sealed class ProviderCard
         var end = now.ToUnixTimeSeconds();
         var start = end - (long)span.TotalSeconds;
         var recent = samples.Where(sample => sample.UnixSeconds >= start && sample.UnixSeconds <= end).ToList();
-        if (recent.Count < 3)
+        // A few readings minutes apart would draw as a dot; wait until they cover a visible stretch of time.
+        if (recent.Count < 3 || recent[^1].UnixSeconds - recent[0].UnixSeconds < span.TotalSeconds / 24)
         {
             return null;
         }

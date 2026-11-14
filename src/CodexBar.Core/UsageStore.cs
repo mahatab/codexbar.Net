@@ -12,9 +12,17 @@ public enum AlertKind
 
     /// <summary>A provider that was working now rejects its sign-in.</summary>
     SignInExpired,
+
+    /// <summary>A service watched by the outage hub went from healthy to reporting an incident.</summary>
+    Outage,
 }
 
-public sealed record UsageAlert(AlertKind Kind, string ProviderName, RateWindow? Window = null, double? Threshold = null);
+public sealed record UsageAlert(
+    AlertKind Kind,
+    string ProviderName,
+    RateWindow? Window = null,
+    double? Threshold = null,
+    string? Detail = null);
 
 /// <summary>Owns the provider list and their latest states, and runs refreshes.</summary>
 public sealed class UsageStore
@@ -32,6 +40,7 @@ public sealed class UsageStore
     private readonly Dictionary<string, ProviderState> states = [];
     private readonly SemaphoreSlim refreshGate = new(1, 1);
     private readonly SemaphoreSlim costGate = new(1, 1);
+    private IReadOnlyList<OutageReading> outages = [];
     private DateTimeOffset? statusCheckedAt;
     private DateTimeOffset? costScannedAt;
 
@@ -186,16 +195,81 @@ public sealed class UsageStore
     private void SetCost(string providerId, CostSummary summary) =>
         this.Mutate(providerId, state => state with { Cost = summary.MonthTokens > 0 ? summary : null }, create: false);
 
+    /// <summary>Latest outage-hub readings, in source order. Empty when the hub is off.</summary>
+    public IReadOnlyList<OutageReading> Outages
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.outages;
+            }
+        }
+    }
+
+    private async Task RefreshOutagesAsync(CancellationToken cancellationToken)
+    {
+        var sources = this.config.EnabledOutageSources();
+        var fetched = await Task.WhenAll(sources.Select(source => OutageHub.FetchAsync(this.context.Http, source, cancellationToken)))
+            .ConfigureAwait(false);
+
+        var alerts = new List<UsageAlert>();
+        lock (this.gate)
+        {
+            var before = this.outages.ToDictionary(reading => reading.Source.Id);
+            var merged = new List<OutageReading>();
+            foreach (var reading in fetched)
+            {
+                before.TryGetValue(reading.Source.Id, out var earlier);
+
+                // An unreadable feed keeps the last known status instead of blanking it.
+                var current = reading.Status is null && earlier is not null ? earlier with { Source = reading.Source } : reading;
+                merged.Add(current);
+
+                // Only a change from a known healthy state is news; a first reading or an ongoing incident is not.
+                if (earlier?.Status is { IsIncident: false } && current.IsIncident)
+                {
+                    alerts.Add(new UsageAlert(AlertKind.Outage, current.Source.Name, Detail: current.Status!.Description));
+                }
+            }
+
+            this.outages = merged;
+        }
+
+        if (this.config.Current.NotifyOutages)
+        {
+            foreach (var alert in alerts)
+            {
+                this.Alert?.Invoke(alert);
+            }
+        }
+    }
+
     private async Task RefreshStatusAsync(IReadOnlyList<IUsageProvider> enabled, CancellationToken cancellationToken)
     {
+        var now = this.Now;
+        var due = this.statusCheckedAt is not { } last || now - last >= StatusInterval;
+
+        // Sources switched on or off in Settings take effect on the next refresh, not the next interval.
+        var wanted = this.config.EnabledOutageSources().Select(source => source.Id).ToList();
+        var sourcesChanged = !wanted.SequenceEqual(this.Outages.Select(reading => reading.Source.Id));
+        if (due || sourcesChanged)
+        {
+            await this.RefreshOutagesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         if (!this.config.Current.CheckStatus)
         {
             this.ForEachState(state => state with { Status = null });
+            if (due)
+            {
+                this.statusCheckedAt = now;
+            }
+
             return;
         }
 
-        var now = this.Now;
-        if (this.statusCheckedAt is { } last && now - last < StatusInterval)
+        if (!due)
         {
             return;
         }

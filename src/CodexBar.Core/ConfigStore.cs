@@ -59,6 +59,21 @@ public sealed class AppConfig
     [JsonPropertyName("trayIconPerProvider")]
     public bool TrayIconPerProvider { get; set; }
 
+    /// <summary>Outage hub: watch public status feeds of cloud and productivity platforms.</summary>
+    [JsonPropertyName("outageHub")]
+    public bool OutageHub { get; set; } = true;
+
+    /// <summary>Per-source switch for the outage hub. A missing entry means on.</summary>
+    [JsonPropertyName("outageSources")]
+    public Dictionary<string, bool> OutageSources { get; set; } = [];
+
+    /// <summary>Extra Statuspage sites the user added to the outage hub, as https base URLs.</summary>
+    [JsonPropertyName("customStatusPages")]
+    public List<string> CustomStatusPages { get; set; } = [];
+
+    [JsonPropertyName("notifyOutages")]
+    public bool NotifyOutages { get; set; } = true;
+
     /// <summary>Protected secrets (API keys, GitHub token) keyed by provider id. Never plain text.</summary>
     [JsonPropertyName("secrets")]
     public Dictionary<string, string> Secrets { get; set; } = [];
@@ -109,6 +124,30 @@ public sealed class ConfigStore
                 .ToList();
             return valid.Count == 0 ? [90] : valid;
         }
+    }
+
+    /// <summary>Built-in sources plus valid custom Statuspage sites, whether or not they are switched on.</summary>
+    public IReadOnlyList<OutageSource> AllOutageSources()
+    {
+        var custom = (this.Current.CustomStatusPages ?? [])
+            .Select(Core.OutageHub.CustomSource)
+            .OfType<OutageSource>()
+            .DistinctBy(source => source.Id);
+        return [.. Core.OutageHub.DefaultSources, .. custom];
+    }
+
+    /// <summary>The sources the hub should poll right now; empty when the hub is off.</summary>
+    public IReadOnlyList<OutageSource> EnabledOutageSources()
+    {
+        var current = this.Current;
+        if (!current.OutageHub)
+        {
+            return [];
+        }
+
+        return this.AllOutageSources()
+            .Where(source => !current.OutageSources.TryGetValue(source.Id, out var enabled) || enabled)
+            .ToList();
     }
 
     public bool? ProviderSwitch(string providerId)

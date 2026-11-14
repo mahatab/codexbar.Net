@@ -103,6 +103,148 @@ public sealed class FeatureTests : IDisposable
         Assert.NotNull(state.Snapshot);
     }
 
+    // ----- Outage hub -----
+
+    [Fact]
+    public void Azure_feed_is_healthy_without_items_and_reports_the_first_incident()
+    {
+        const string healthy = """<?xml version="1.0" encoding="utf-8"?><rss version="2.0"><channel><title>Azure Status</title><lastBuildDate>Sat, 14 Nov 2026 23:10:00 Z</lastBuildDate></channel></rss>""";
+        const string incident = """
+            <rss version="2.0"><channel><title>Azure Status</title>
+              <item><title>Azure Front Door - Connectivity issues</title><pubDate>Fri, 13 Nov 2026 11:00:00 Z</pubDate></item>
+              <item><title>Second incident</title></item>
+            </channel></rss>
+            """;
+
+        Assert.Equal(StatusIndicator.None, OutageHub.ParseAzureRss(healthy)!.Indicator);
+        var status = OutageHub.ParseAzureRss(incident)!;
+        Assert.Equal(StatusIndicator.Minor, status.Indicator);
+        Assert.Equal("Azure Front Door - Connectivity issues (+1 more)", status.Description);
+        Assert.Null(OutageHub.ParseAzureRss("<html>not a feed"));
+    }
+
+    [Fact]
+    public void Aws_feed_is_decoded_from_utf16_and_reports_the_worst_event()
+    {
+        const string json = """
+            [{"date":"1772369485","status":"1","service_name":"Amazon S3","region_name":"Ohio","summary":"Informational"},
+             {"date":"1772369485","status":"3","service_name":"Amazon EC2","region_name":"N. Virginia","summary":"Region Availability",
+              "event_log":[{"summary":"Investigating","timestamp":1772369485},{"summary":"Increased Error Rates","timestamp":1789468030}]}]
+            """;
+        byte[] body = [0xFE, 0xFF, .. Encoding.BigEndianUnicode.GetBytes(json)];
+
+        var status = OutageHub.Parse(OutageFeedKind.AwsCurrentEvents, body)!;
+
+        Assert.Equal(StatusIndicator.Major, status.Indicator);
+        Assert.Equal("Amazon EC2, N. Virginia: Increased Error Rates (+1 more)", status.Description);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1789468030), status.UpdatedAt);
+        Assert.Equal(StatusIndicator.None, OutageHub.ParseAwsCurrentEvents("[]")!.Indicator);
+    }
+
+    [Fact]
+    public void Google_cloud_feed_ignores_ended_incidents()
+    {
+        const string feed = """
+            [{"begin":"2026-11-10T00:00:00+00:00","end":"2026-11-10T04:00:00+00:00","severity":"high","external_desc":"Old outage"},
+             {"begin":"2026-11-13T10:00:00+00:00","severity":"medium","status_impact":"SERVICE_DISRUPTION",
+              "external_desc":"Cloud Run is experiencing elevated latency","modified":"2026-11-13T11:00:00+00:00"}]
+            """;
+
+        var status = OutageHub.ParseGoogleCloud(feed)!;
+
+        Assert.Equal(StatusIndicator.Major, status.Indicator);
+        Assert.Equal("Cloud Run is experiencing elevated latency", status.Description);
+        Assert.Equal(StatusIndicator.None, OutageHub.ParseGoogleCloud("""[{"begin":"x","end":"y"}]""")!.Indicator);
+    }
+
+    [Fact]
+    public void Microsoft_posts_treat_operational_and_restored_as_healthy()
+    {
+        const string healthy = """
+            [{"ServiceDisplayName":"Microsoft 365 (Consumer)","Title":"Earlier problem","Status":"Service restored"},
+             {"ServiceDisplayName":"Outlook.com","Title":null,"Status":"Operational"}]
+            """;
+        const string degraded = """
+            [{"ServiceDisplayName":"OneDrive","Title":null,"Status":"Operational"},
+             {"ServiceDisplayName":"Outlook.com","Title":"Users may be unable to send email","Status":"Service degradation","LastUpdatedTime":"2026-11-13T10:00:00+00:00"},
+             {"ServiceDisplayName":"Teams","Title":"Users cannot join meetings","Status":"Service interruption"}]
+            """;
+
+        Assert.Equal(StatusIndicator.None, OutageHub.ParseMicrosoftPosts(healthy)!.Indicator);
+        var status = OutageHub.ParseMicrosoftPosts(degraded)!;
+        Assert.Equal(StatusIndicator.Major, status.Indicator);
+        Assert.Equal("Teams: Users cannot join meetings (+1 more)", status.Description);
+        Assert.Equal(StatusIndicator.None, OutageHub.ParseMicrosoftPosts("""{"Message":"No Azure issues detected","Status":"Available"}""")!.Indicator);
+        Assert.Null(OutageHub.ParseMicrosoftPosts("""[{"unexpected":true}]"""));
+    }
+
+    [Fact]
+    public void Custom_status_pages_accept_only_https_hosts()
+    {
+        var source = OutageHub.CustomSource(" status.example.com/some/path ")!;
+
+        Assert.Equal(("custom:status.example.com", "example.com", "https://status.example.com"), (source.Id, source.Name, source.FeedUrl));
+        Assert.Equal(OutageFeedKind.Statuspage, source.Kind);
+        Assert.Null(OutageHub.CustomSource("http://status.example.com"));
+        Assert.Null(OutageHub.CustomSource("   "));
+    }
+
+    [Fact]
+    public async Task Outage_hub_alerts_on_a_new_incident_and_keeps_the_last_status_when_a_feed_fails()
+    {
+        var mode = "healthy";
+        var context = this.NewContext(request =>
+        {
+            if (request.RequestUri!.Host != "www.cloudflarestatus.com")
+            {
+                return new HttpResponseMessage(HttpStatusCode.NotFound);
+            }
+
+            return mode switch
+            {
+                "healthy" => Json("""{"status":{"indicator":"none","description":"All Systems Operational"}}"""),
+                "incident" => Json("""{"status":{"indicator":"major","description":"Partial System Outage"}}"""),
+                _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable),
+            };
+        });
+        var config = this.NewConfig();
+        config.Update(settings =>
+        {
+            foreach (var source in OutageHub.DefaultSources)
+            {
+                settings.OutageSources[source.Id] = source.Id == "cloudflare";
+            }
+        });
+        var clock = Now;
+        var timedContext = new ProviderContext(context.Http, this.directory, clock: () => clock);
+        var store = new UsageStore(timedContext, config, [new FakeProvider()]);
+        var alerts = new List<UsageAlert>();
+        store.Alert += alerts.Add;
+
+        async Task RefreshAs(string next)
+        {
+            mode = next;
+            clock = clock.AddMinutes(10);
+            await store.RefreshAllAsync(CancellationToken.None);
+        }
+
+        await RefreshAs("incident");
+        Assert.Empty(alerts);
+        await RefreshAs("healthy");
+        await RefreshAs("incident");
+        await RefreshAs("incident");
+        await RefreshAs("down");
+
+        var alert = Assert.Single(alerts);
+        Assert.Equal((AlertKind.Outage, "Cloudflare", "Partial System Outage"), (alert.Kind, alert.ProviderName, alert.Detail));
+        var reading = Assert.Single(store.Outages);
+        Assert.Equal(StatusIndicator.Major, reading.Status!.Indicator);
+
+        config.Update(settings => settings.OutageHub = false);
+        await store.RefreshAllAsync(CancellationToken.None);
+        Assert.Empty(store.Outages);
+    }
+
     // ----- Pace -----
 
     [Fact]

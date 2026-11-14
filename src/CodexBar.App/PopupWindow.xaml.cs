@@ -44,10 +44,18 @@ public partial class PopupWindow : Window
     /// <summary>When the popup last hid itself, so a tray click that caused the hide does not reopen it.</summary>
     public DateTime LastHidden { get; private set; } = DateTime.MinValue;
 
-    public void SetCards(IReadOnlyList<ProviderCard> cards, string status, bool refreshing)
+    public void SetCards(
+        IReadOnlyList<ProviderCard> cards,
+        string status,
+        bool refreshing,
+        IReadOnlyList<OutageRow>? outages = null)
     {
         this.Cards.ItemsSource = cards;
-        this.EmptyText.Visibility = cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        this.Outages.ItemsSource = outages;
+        this.OutageCard.Visibility = outages is { Count: > 0 } ? Visibility.Visible : Visibility.Collapsed;
+        var open = outages?.Count(row => row.IsIncident) ?? 0;
+        this.OutageSummary.Text = open == 0 ? "All operational" : open == 1 ? "1 service affected" : $"{open} services affected";
+        this.EmptyText.Visibility = cards.Count == 0 && outages is not { Count: > 0 } ? Visibility.Visible : Visibility.Collapsed;
         this.StatusText.Text = status;
         this.RefreshButton.IsEnabled = !refreshing;
         this.RefreshButton.Content = refreshing ? "Refreshing…" : "Refresh";
@@ -102,6 +110,14 @@ public partial class PopupWindow : Window
     private void OnSettings(object sender, RoutedEventArgs e) => this.SettingsRequested?.Invoke();
 
     private void OnQuit(object sender, RoutedEventArgs e) => this.QuitRequested?.Invoke();
+
+    private void OnOutage(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string url })
+        {
+            Shell.OpenUrl(url);
+        }
+    }
 
     private void OnStatus(object sender, MouseButtonEventArgs e)
     {

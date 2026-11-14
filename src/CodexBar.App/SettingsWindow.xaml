@@ -85,6 +85,26 @@
                 </StackPanel>
             </Border>
 
+            <TextBlock Text="Outage hub" FontSize="15" FontWeight="SemiBold" Margin="0,18,0,8" />
+            <Border Background="{DynamicResource Card}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                    CornerRadius="8" Padding="14,12">
+                <StackPanel>
+                    <CheckBox x:Name="OutageHubBox" Content="Show outages from cloud and productivity services"
+                              Foreground="{DynamicResource Fg}"
+                              Checked="OnOptionChanged" Unchecked="OnOptionChanged" />
+                    <CheckBox x:Name="NotifyOutagesBox" Content="Notify me when a watched service reports an incident"
+                              Margin="0,10,0,0" Foreground="{DynamicResource Fg}"
+                              Checked="OnOptionChanged" Unchecked="OnOptionChanged" />
+                    <WrapPanel x:Name="OutageSourceList" Margin="22,4,0,0" />
+                    <TextBlock Text="More status pages (Statuspage sites, one address per line)" FontSize="12"
+                               Margin="0,12,0,4" Foreground="{DynamicResource FgDim}" />
+                    <TextBox x:Name="CustomPagesBox" AcceptsReturn="True" MinHeight="44" Padding="4,2"
+                             TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"
+                             ToolTip="For example status.stripe.com or www.vercel-status.com"
+                             LostFocus="OnCustomPagesChanged" />
+                </StackPanel>
+            </Border>
+
             <TextBlock Text="Providers" FontSize="15" FontWeight="SemiBold" Margin="0,18,0,8" />
             <StackPanel x:Name="ProviderList" />
 
