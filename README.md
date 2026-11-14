@@ -1,0 +1,206 @@
+<p align="center">
+  <img src="docs/images/logo.png" alt="CodexBar.Net" width="140" />
+</p>
+
+<h1 align="center">CodexBar.Net</h1>
+
+<p align="center">
+  <strong>Your AI coding limits, one glance from the Windows tray.</strong>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" /></a>
+  <a href="https://github.com/mahatab/codexbar.Net/releases/latest"><img src="https://img.shields.io/github/v/release/mahatab/codexbar.Net?label=release&color=16D3B4" alt="Latest release" /></a>
+  <a href="https://github.com/mahatab/codexbar.Net/actions/workflows/ci.yml"><img src="https://github.com/mahatab/codexbar.Net/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <img src="https://img.shields.io/badge/.NET-9-512BD4?logo=dotnet&logoColor=white" alt=".NET 9" />
+  <img src="https://img.shields.io/badge/WPF-tray%20app-0078D4" alt="WPF tray app" />
+  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows&logoColor=white" alt="Windows 10 | 11" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/mahatab/codexbar.Net/releases/latest"><strong>⬇ Download for Windows</strong></a>
+</p>
+
+---
+
+CodexBar.Net is a native **Windows notification-area app** that shows how much of your **Codex, Claude, Cursor, Gemini, Copilot, Grok and OpenRouter** limits you have used, when each one resets, and whether you will run out first. It is a C#/.NET rewrite of the core of [CodexBar](https://github.com/steipete/CodexBar), the macOS menu bar app by Peter Steinberger. It needs no Swift toolchain, no WSL and no CLI wrapper: one `CodexBar.exe`.
+
+<p align="center">
+  <img src="docs/images/popup-dark.png" alt="CodexBar.Net popup in dark mode showing Codex, Claude, Cursor, Gemini and Grok cards with usage bars, trend lines, pace and cost estimates" width="340" />
+  &nbsp;&nbsp;
+  <img src="docs/images/popup-light.png" alt="The same popup in light mode" width="340" />
+</p>
+<p align="center"><em>One card per provider — limits, reset countdowns, pace, trend lines, incidents and estimated spend (demo data)</em></p>
+
+## How It Works
+
+CodexBar.Net reuses the sign-ins you already have. It reads the credential file each CLI or app keeps on your PC, asks that provider's own usage endpoint how much quota is left, and draws the answer as a two-bar meter in the tray. Click the meter for the full popup.
+
+<p align="center">
+  <img src="docs/images/tray-icons.png" alt="Tray icon states: normal, amber at 70 percent, red at 90 percent, attention dot, and per-provider icons with a letter" width="480" />
+</p>
+<p align="center"><em>The tray meter: normal, amber at 70%, red at 90%, an attention dot, and optional per-provider icons</em></p>
+
+## Features
+
+### Seven Providers
+- **Codex** — session and weekly windows, model-specific extra limits, credits and plan
+- **Claude** — session, weekly and model-scoped weekly windows, extra usage and plan
+- **Cursor** — plan usage, Auto and named-model lanes, Grok Bot allowance, on-demand spend
+- **Gemini** — Pro, Flash and Flash Lite daily quotas with plan detection
+- **Copilot** — premium requests and chat quota through a GitHub device sign-in
+- **Grok** — SuperGrok credits, per-product breakdown and prepaid balance
+- **OpenRouter** — balance, account usage and key limit
+
+### Pace
+- **Will it last?** — each limit shows whether you are under pace, on pace, or on track to run out before the reset, with the time left at the current burn rate
+- Stays quiet in the first few percent of a window, where a handful of requests would look like a wild burn rate
+
+### Usage Trend Lines
+- A small sparkline per limit: the last day for short windows, the last week for weekly and monthly ones
+- History is a small local file of percentages and timestamps; nothing leaves your PC
+
+### Provider Status
+- Polls the **OpenAI, Claude, Cursor and GitHub** status pages and the **Google Workspace** incident feed for Gemini
+- An incident appears on the affected card and adds an attention dot to the tray icon, so a failed refresh explains itself
+- Click the status line to open the provider's status page
+
+### Local Cost Estimate
+- Scans the session logs **Codex** and **Claude Code** already write on your PC and shows tokens and estimated API value for today and the last 30 days
+- Prices come from the public [models.dev](https://models.dev) catalog, cached for a day, with a bundled table as the offline fallback
+- An estimate of API list price, not what your subscription charges
+
+### Notifications
+- **Custom thresholds** — choose any set, for example 50, 75 and 90% used
+- **Reset alerts** — optional notice when a heavily used limit resets
+- **Sign-in alerts** — notice when a provider that was working starts rejecting its sign-in
+- A provider's first reading never fires an alert
+
+### Tray Icon
+- **Follow the tightest limit** automatically, or pin the meter to one provider
+- **One icon per provider** — optional, each marked with the provider's initial
+- Follows the Windows light and dark taskbar
+
+### Careful With Your Credentials
+- **Read-only by default** — CLI credential files are read and never rewritten
+- **Optional sign-in renewal** — off by default; when on, an expired Codex or Claude token is renewed and written back so the CLI stays signed in
+- **Encrypted secrets** — API keys, pasted cookies and the GitHub token are encrypted with Windows DPAPI for your user account
+- **No telemetry** — requests go only to each provider's own endpoints, their status pages and the models.dev price list
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/images/settings.png" alt="CodexBar.Net settings showing general, popup, notification, sign-in renewal and provider sections" width="460" />
+</p>
+<p align="center"><em>Settings — refresh interval, tray behavior, what the popup shows, notifications and every provider</em></p>
+
+## Supported Providers
+
+| Provider | Where the sign-in comes from | What it shows | Status feed |
+|----------|------------------------------|---------------|:-----------:|
+| **Codex** | Codex CLI: `%USERPROFILE%\.codex\auth.json` (or `%CODEX_HOME%`) | Session, weekly, extra limits, credits, plan | ✅ |
+| **Claude** | Claude Code: `%USERPROFILE%\.claude\.credentials.json` (or `%CLAUDE_CONFIG_DIR%`) | Session, weekly, model-scoped weekly, extra usage, plan | ✅ |
+| **Cursor** | Cursor app's local sign-in, or a pasted cursor.com Cookie header | Plan usage, Auto / named models, Grok Bot, on-demand spend | ✅ |
+| **Gemini** | Gemini CLI: `%USERPROFILE%\.gemini\oauth_creds.json` | Pro / Flash / Flash Lite quotas, plan | ✅ |
+| **Copilot** | GitHub device sign-in from Settings | Premium requests, chat quota, plan | ✅ |
+| **Grok** | Grok CLI: `%USERPROFILE%\.grok\auth.json`, a pasted bearer token, or `GROK_OAUTH_TOKEN` | Credits, product breakdown, prepaid balance | link only |
+| **OpenRouter** | API key from Settings or `OPENROUTER_API_KEY` | Balance, account usage, key limit | link only |
+
+A provider turns on by itself when its sign-in is found. Settings can switch any of them on or off.
+
+> **Gemini note:** Google stopped serving Gemini CLI sign-in for individual, AI Pro and Ultra accounts in June 2026. Workspace, education and Code Assist Standard/Enterprise accounts still work; CodexBar.Net says so plainly when it meets a consumer account.
+
+## Quick Start
+
+### Download
+1. Get `CodexBar-<version>-win-x64.exe` (or `win-arm64`) from the [latest release](https://github.com/mahatab/codexbar.Net/releases/latest).
+2. Run it. The build is not code-signed, so Windows SmartScreen may ask you to confirm: choose **More info → Run anyway**.
+3. Look for the two-bar meter in the notification area. Windows hides new icons behind the `^` arrow; drag it onto the taskbar to keep it visible.
+
+To install it for your user account with a Start Menu shortcut, download `install.ps1` next to the exe and run:
+
+```powershell
+./install.ps1 -StartAtLogin
+```
+
+### Use
+- **Left-click** the icon for the popup; **right-click** for Refresh, Settings and Quit
+- **F5** refreshes while the popup is open; **Esc** closes it
+- **Dashboard ↗** on a card opens that provider's own usage page
+
+## Building
+
+Requires Windows 10 or 11 and the .NET 9 SDK.
+
+```powershell
+dotnet build CodexBar.Windows.sln
+dotnet test CodexBar.Windows.sln
+dotnet run --project src/CodexBar.App
+```
+
+A self-contained single-file exe that needs no .NET install:
+
+```powershell
+./Scripts/publish.ps1                  # win-x64 into ./publish
+./Scripts/publish.ps1 -Runtime win-arm64
+```
+
+## Architecture
+
+```
+CodexBar.Windows.sln
+├── src/CodexBar.Core        net9.0, no Windows UI dependencies
+│   ├── Providers/           one file per provider, each with a pure ParseUsage function
+│   ├── UsageStore           refresh loop, provider states, alerts
+│   ├── StatusFetcher        Statuspage and Google Workspace incident feeds
+│   ├── Pace · HistoryStore  burn-rate projection and trend samples
+│   ├── CostScanner          local Codex / Claude Code log scan
+│   ├── PriceCatalog         models.dev price cache
+│   └── TokenRefresher       opt-in sign-in renewal
+├── src/CodexBar.App         WPF popup and Settings, WinForms NotifyIcon for the tray
+└── tests/CodexBar.Core.Tests  xunit; stubbed HTTP, temp folders, never a real account
+```
+
+### Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Runtime | .NET 9 |
+| UI | WPF (popup, Settings), Windows Forms `NotifyIcon` (tray) |
+| Secret storage | Windows DPAPI, current user |
+| Cursor sign-in | Read-only SQLite through Windows' built-in `winsqlite3.dll` |
+| Tests | xunit, 61 tests |
+| NuGet dependencies | None beyond the test framework |
+
+## What Has Been Verified
+
+CodexBar.Net is young. Being straight about what has and has not been exercised:
+
+| Area | State |
+|------|-------|
+| Claude and Codex usage | Run against real accounts |
+| Provider status, pace, cost scan | Run against real data |
+| Cursor, Gemini, Grok, Copilot, OpenRouter | Covered by tests with stubbed responses; not yet run against a real account |
+| Sign-in renewal | Covered by tests only; treat as experimental |
+| Notifications, per-provider tray icons | Built, lightly exercised |
+
+If a provider misbehaves for you, please [open an issue](https://github.com/mahatab/codexbar.Net/issues) with the card's error text (never a token or cookie).
+
+## Not Ported From the macOS App
+
+The macOS CodexBar supports about 110 providers and much more. This port does not have browser-cookie import, CLI fallback sources, multiple accounts, widgets, the `codexbar` CLI, plugins, auto-update or a signed installer.
+
+## Privacy
+
+- Credential files that belong to other tools are read only, unless you switch on sign-in renewal.
+- Settings, history and the price cache live in `%APPDATA%\CodexBar`. Secrets there are DPAPI-encrypted.
+- No browser cookies are read from disk. A Cursor cookie is used only if you paste one.
+- Network requests go to each enabled provider's usage endpoint, the status pages listed above, and `models.dev` for list prices.
+
+## Credits
+
+CodexBar.Net is an independent Windows port of [CodexBar](https://github.com/steipete/CodexBar) by [Peter Steinberger](https://github.com/steipete). The provider endpoints, response mappings and bundled price table follow that project's documentation and source. It is not affiliated with OpenAI, Anthropic, Cursor, Google, GitHub, xAI or OpenRouter.
+
+## License
+
+[MIT](LICENSE)

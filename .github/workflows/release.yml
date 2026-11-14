@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Test
+        run: dotnet test CodexBar.Windows.sln -c Release
+
+      - name: Publish single-file executables
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          foreach ($runtime in 'win-x64', 'win-arm64') {
+            ./Scripts/publish.ps1 -Runtime $runtime -Output "publish/$runtime"
+            Copy-Item "publish/$runtime/CodexBar.exe" "dist/CodexBar-$version-$runtime.exe"
+          }
+          Copy-Item Scripts/install.ps1, Scripts/uninstall.ps1 dist/
+          Get-ChildItem dist | Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } |
+            Set-Content dist/SHA256SUMS.txt
+          Get-ChildItem dist
+
+      - name: Upload to the release
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title "CodexBar.Net $tag" --notes "Build for $tag."
+          }
+          gh release upload $tag (Get-ChildItem dist).FullName --clobber

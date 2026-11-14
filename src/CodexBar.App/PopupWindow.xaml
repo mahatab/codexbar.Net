@@ -1,0 +1,126 @@
+<Window x:Class="CodexBar.App.PopupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="CodexBar" Width="356" SizeToContent="Height" MaxHeight="720"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True"
+        FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="13"
+        TextOptions.TextFormattingMode="Display" UseLayoutRounding="True">
+    <Border x:Name="Root" Margin="8" CornerRadius="10" Background="{DynamicResource Bg}"
+            BorderBrush="{DynamicResource Line}" BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="14" ShadowDepth="2" Opacity="0.35" />
+        </Border.Effect>
+        <DockPanel Margin="14,12,14,12">
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                <Button x:Name="RefreshButton" DockPanel.Dock="Right" Style="{StaticResource FlatButton}"
+                        Content="Refresh" Click="OnRefresh" ToolTip="Refresh now (F5)" />
+                <TextBlock Text="CodexBar" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"
+                           Foreground="{DynamicResource Fg}" />
+            </DockPanel>
+
+            <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0" LastChildFill="False">
+                <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Content="Quit" Click="OnQuit" />
+                <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}" Content="Settings"
+                        Margin="0,0,6,0" Click="OnSettings" />
+                <TextBlock x:Name="StatusText" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{DynamicResource FgDim}" />
+            </DockPanel>
+
+            <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto" Focusable="False">
+                <StackPanel>
+                    <TextBlock x:Name="EmptyText" TextWrapping="Wrap" Margin="2,6,2,6" Visibility="Collapsed"
+                               Foreground="{DynamicResource FgDim}"
+                               Text="No providers are enabled. Open Settings to turn one on." />
+                    <ItemsControl x:Name="Cards" Focusable="False">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource Card}" CornerRadius="8" Padding="12,10,12,10"
+                                        Margin="0,0,0,8" BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                                    <StackPanel>
+                                        <DockPanel>
+                                            <Button DockPanel.Dock="Right" Content="Dashboard ↗" FontSize="11"
+                                                    Padding="6,2" Style="{StaticResource FlatButton}"
+                                                    Tag="{Binding DashboardUrl}" Click="OnDashboard" />
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14"
+                                                           Foreground="{DynamicResource Fg}" />
+                                                <Border Margin="8,0,0,0" Padding="6,1" CornerRadius="4"
+                                                        VerticalAlignment="Center"
+                                                        Background="{DynamicResource Track}"
+                                                        Visibility="{Binding PlanVisibility}">
+                                                    <TextBlock Text="{Binding Plan}" FontSize="11"
+                                                               Foreground="{DynamicResource Fg}" />
+                                                </Border>
+                                            </StackPanel>
+                                        </DockPanel>
+                                        <TextBlock Text="{Binding Account}" FontSize="11" Margin="0,2,0,0"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Foreground="{DynamicResource FgDim}"
+                                                   Visibility="{Binding AccountVisibility}" />
+                                        <TextBlock Text="{Binding Status}" FontSize="11" Margin="0,4,0,0"
+                                                   TextWrapping="Wrap" Cursor="Hand"
+                                                   ToolTip="Open the provider's status page"
+                                                   Foreground="{Binding StatusBrush}" Tag="{Binding StatusUrl}"
+                                                   MouseLeftButtonUp="OnStatus"
+                                                   Visibility="{Binding StatusVisibility}" />
+
+                                        <ItemsControl ItemsSource="{Binding Windows}" Focusable="False">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="0,9,0,0">
+                                                        <DockPanel>
+                                                            <TextBlock DockPanel.Dock="Right" Text="{Binding PercentText}"
+                                                                       Foreground="{DynamicResource Fg}" FontSize="12" />
+                                                            <Canvas DockPanel.Dock="Right" Width="54" Height="12"
+                                                                    Margin="0,0,8,0" VerticalAlignment="Center"
+                                                                    ClipToBounds="True" ToolTip="Usage trend"
+                                                                    Visibility="{Binding TrendVisibility}">
+                                                                <Polyline Points="{Binding Trend}" Stroke="{Binding Fill}"
+                                                                          StrokeThickness="1.3" StrokeLineJoin="Round"
+                                                                          Opacity="0.9" />
+                                                            </Canvas>
+                                                            <TextBlock Text="{Binding Title}" FontSize="12"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       Foreground="{DynamicResource Fg}" />
+                                                        </DockPanel>
+                                                        <ProgressBar Style="{StaticResource Meter}" Margin="0,4,0,0"
+                                                                     Value="{Binding Used, Mode=OneWay}"
+                                                                     Foreground="{Binding Fill}" />
+                                                        <TextBlock Text="{Binding Caption}" FontSize="11" Margin="0,3,0,0"
+                                                                   Foreground="{DynamicResource FgDim}"
+                                                                   Visibility="{Binding CaptionVisibility}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <ItemsControl ItemsSource="{Binding Details}" Focusable="False" Margin="0,4,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <DockPanel Margin="0,4,0,0">
+                                                        <TextBlock DockPanel.Dock="Right" Text="{Binding Value}"
+                                                                   FontSize="12" Foreground="{DynamicResource Fg}" />
+                                                        <TextBlock Text="{Binding Label}" FontSize="12"
+                                                                   Foreground="{DynamicResource FgDim}" />
+                                                    </DockPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" FontSize="12"
+                                                   Margin="0,8,0,0" Foreground="{Binding MessageBrush}"
+                                                   Visibility="{Binding MessageVisibility}" />
+                                        <TextBlock Text="{Binding Footer}" FontSize="11" Margin="0,8,0,0"
+                                                   Foreground="{DynamicResource FgDim}"
+                                                   Visibility="{Binding FooterVisibility}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+        </DockPanel>
+    </Border>
+</Window>
