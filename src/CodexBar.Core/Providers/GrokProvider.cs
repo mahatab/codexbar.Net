@@ -21,7 +21,7 @@ public sealed class GrokProvider : IUsageProvider
     public string DashboardUrl => "https://grok.com/";
 
     public string SetupHint =>
-        "Sign in with the Grok CLI (`grok login`); CodexBar reads ~/.grok/auth.json. "
+        "Sign in with the Grok CLI (`grok login`); CodexBar.Net reads ~/.grok/auth.json. "
         + "Or paste a SuperGrok bearer token, or set GROK_OAUTH_TOKEN.";
 
     public bool UsesApiKey => true;

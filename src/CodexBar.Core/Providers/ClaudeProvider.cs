@@ -20,7 +20,7 @@ public sealed class ClaudeProvider : IUsageProvider
 
     public string DashboardUrl => "https://claude.ai/settings/usage";
 
-    public string SetupHint => "Sign in with Claude Code. CodexBar reads ~/.claude/.credentials.json.";
+    public string SetupHint => "Sign in with Claude Code. CodexBar.Net reads ~/.claude/.credentials.json.";
 
     public bool UsesApiKey => false;
 

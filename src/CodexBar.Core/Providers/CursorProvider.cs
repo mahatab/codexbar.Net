@@ -21,7 +21,7 @@ public sealed class CursorProvider : IUsageProvider
     public string DashboardUrl => "https://cursor.com/dashboard?tab=usage";
 
     public string SetupHint =>
-        "Sign in to the Cursor app; CodexBar reads its local sign-in. "
+        "Sign in to the Cursor app; CodexBar.Net reads its local sign-in. "
         + "Or paste the Cookie header from a cursor.com request.";
 
     public bool UsesApiKey => true;
@@ -303,7 +303,7 @@ public sealed class CursorProvider : IUsageProvider
         {
             throw new ProviderException(
                 ProviderErrorKind.NotConfigured,
-                "This Cursor version encrypts its sign-in, which CodexBar for Windows cannot read yet. "
+                "This Cursor version encrypts its sign-in, which CodexBar.Net cannot read yet. "
                 + "Paste a cursor.com cookie in Settings instead.");
         }
 

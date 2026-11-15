@@ -131,7 +131,7 @@ public static class TokenRefresher
             {
                 throw new ProviderException(
                     ProviderErrorKind.InvalidResponse,
-                    $"{providerName} returned a token response CodexBar could not read.",
+                    $"{providerName} returned a token response CodexBar.Net could not read.",
                     error);
             }
 

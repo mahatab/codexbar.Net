@@ -65,7 +65,7 @@ public partial class SettingsWindow : Window
         this.ConfigPath.Text = $"Settings file: {configPath}";
         if (config.LoadError is { } error)
         {
-            this.ConfigWarning.Text = error + " Changes made here last until CodexBar quits; fix or delete the file to save them.";
+            this.ConfigWarning.Text = error + " Changes made here last until CodexBar.Net quits; fix or delete the file to save them.";
             this.ConfigWarning.Visibility = Visibility.Visible;
         }
 

@@ -34,7 +34,7 @@ internal static class ProviderHttp
         JsonHelpers.TryParse(body)
         ?? throw new ProviderException(
             ProviderErrorKind.InvalidResponse,
-            $"{providerName} returned a response CodexBar could not read.");
+            $"{providerName} returned a response CodexBar.Net could not read.");
 
     public static string Shorten(string body)
     {

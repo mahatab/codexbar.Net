@@ -17,7 +17,7 @@ public sealed class CopilotProvider : IUsageProvider
 
     public string DashboardUrl => "https://github.com/settings/copilot/features";
 
-    public string SetupHint => "Sign in with GitHub from Settings. CodexBar stores the token encrypted for your Windows account.";
+    public string SetupHint => "Sign in with GitHub from Settings. CodexBar.Net stores the token encrypted for your Windows account.";
 
     public bool UsesApiKey => false;
 

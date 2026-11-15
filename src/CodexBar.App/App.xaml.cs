@@ -234,12 +234,12 @@ public partial class App : Application
             case AlertKind.Outage:
                 tray?.Notify(
                     $"{alert.ProviderName} is reporting an incident",
-                    string.IsNullOrEmpty(alert.Detail) ? "Open CodexBar for the outage hub." : alert.Detail);
+                    string.IsNullOrEmpty(alert.Detail) ? "Open CodexBar.Net for the outage hub." : alert.Detail);
                 break;
             case AlertKind.SignInExpired:
                 tray?.Notify(
                     $"{alert.ProviderName} sign-in expired",
-                    $"CodexBar can no longer read {alert.ProviderName} usage. Open the popup for details.");
+                    $"CodexBar.Net can no longer read {alert.ProviderName} usage. Open the popup for details.");
                 break;
         }
     }
@@ -310,7 +310,7 @@ public partial class App : Application
         this.trays[string.Empty].Update(
             chosen is null ? [] : Bars(chosen.Value.State),
             states.Count == 0
-                ? "CodexBar: no providers enabled"
+                ? "CodexBar.Net: no providers enabled"
                 : string.Join("\n", states.Select(entry => TooltipLine(entry.Provider, entry.State))),
             states.Any(entry => NeedsAttention(entry.State)));
     }

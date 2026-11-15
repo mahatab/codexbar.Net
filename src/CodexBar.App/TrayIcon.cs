@@ -18,14 +18,14 @@ internal sealed class TrayIcon : IDisposable
     public TrayIcon(Action onClick, Action onRefresh, Action onSpend, Action onSettings, Action onQuit)
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Open CodexBar", null, (_, _) => onClick());
+        menu.Items.Add("Open CodexBar.Net", null, (_, _) => onClick());
         menu.Items.Add("Refresh now", null, (_, _) => onRefresh());
         menu.Items.Add("Usage && spend…", null, (_, _) => onSpend());
         menu.Items.Add("Settings…", null, (_, _) => onSettings());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quit", null, (_, _) => onQuit());
 
-        this.icon = new NotifyIcon { Text = "CodexBar", ContextMenuStrip = menu, Visible = true };
+        this.icon = new NotifyIcon { Text = "CodexBar.Net", ContextMenuStrip = menu, Visible = true };
         this.icon.MouseClick += (_, e) =>
         {
             if (e.Button == MouseButtons.Left)
@@ -33,7 +33,7 @@ internal sealed class TrayIcon : IDisposable
                 onClick();
             }
         };
-        this.Update([], "CodexBar", hasError: false);
+        this.Update([], "CodexBar.Net", hasError: false);
     }
 
     /// <param name="letter">Provider initial drawn beside the bars when each provider has its own icon.</param>

@@ -18,7 +18,7 @@ public sealed class CodexProvider : IUsageProvider
 
     public string DashboardUrl => "https://chatgpt.com/codex/settings/usage";
 
-    public string SetupHint => "Sign in with the Codex CLI (`codex login`). CodexBar reads ~/.codex/auth.json.";
+    public string SetupHint => "Sign in with the Codex CLI (`codex login`). CodexBar.Net reads ~/.codex/auth.json.";
 
     public bool UsesApiKey => false;
 

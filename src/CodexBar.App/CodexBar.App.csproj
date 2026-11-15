@@ -10,8 +10,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>CodexBar</AssemblyName>
     <RootNamespace>CodexBar.App</RootNamespace>
-    <Product>CodexBar</Product>
-    <Version>0.4.0</Version>
+    <Product>CodexBar.Net</Product>
+    <Version>0.4.1</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>

@@ -30,7 +30,7 @@ public sealed partial class GeminiProvider : IUsageProvider
 
     public string DashboardUrl => "https://gemini.google.com/usage";
 
-    public string SetupHint => "Sign in with the Gemini CLI (`gemini`, Google account). CodexBar reads ~/.gemini/oauth_creds.json.";
+    public string SetupHint => "Sign in with the Gemini CLI (`gemini`, Google account). CodexBar.Net reads ~/.gemini/oauth_creds.json.";
 
     public bool UsesApiKey => false;
 
@@ -288,7 +288,7 @@ public sealed partial class GeminiProvider : IUsageProvider
         var client = ResolveOAuthClient(context)
             ?? throw new ProviderException(
                 ProviderErrorKind.Unauthorized,
-                "The Gemini CLI sign-in has expired and CodexBar could not find the Gemini CLI install to renew it. "
+                "The Gemini CLI sign-in has expired and CodexBar.Net could not find the Gemini CLI install to renew it. "
                 + "Run `gemini` once, or set GEMINI_OAUTH_CLIENT_ID and GEMINI_OAUTH_CLIENT_SECRET.");
 
         using var request = new HttpRequestMessage(HttpMethod.Post, TokenUrl)
