@@ -72,10 +72,14 @@ CodexBar.Net reuses the sign-ins you already have. It reads the credential file 
 - **Incident alerts** — optional notification when a healthy service starts reporting an incident
 - Every feed is public and unauthenticated; click a row to open that service's status page
 
-### Local Cost Estimate
-- Scans the session logs **Codex** and **Claude Code** already write on your PC and shows tokens and estimated API value for today and the last 30 days
+### Usage & Spend ![New](https://img.shields.io/badge/New-green)
+- **Detailed local scan** — reads the session logs **Codex** and **Claude Code** already write on your PC and prices every request
+- **Daily chart** — 30 days of spend as a bar chart, with today, 7-day and 30-day totals
+- **By model and by project** — see which models and which folders the spend went to
+- **Token mix** — input, cache reads, cache writes and output as one stacked bar
+- **Long-context pricing** — requests whose prompt passes a model's threshold (272K for recent GPT models, 200K for Claude Sonnet 4 and 4.5) are priced at the higher rate for the whole request, as the providers bill them
 - Prices come from the public [models.dev](https://models.dev) catalog, cached for a day, with a bundled table as the offline fallback
-- An estimate of API list price, not what your subscription charges
+- An estimate of API list price, not what your subscription charges. Open it from **Spend** in the popup or the tray menu
 
 ### Notifications
 - **Custom thresholds** — choose any set, for example 50, 75 and 90% used
@@ -95,6 +99,11 @@ CodexBar.Net reuses the sign-ins you already have. It reads the credential file 
 - **No telemetry** — requests go only to each provider's own endpoints, public status feeds and the models.dev price list
 
 ## Screenshots
+
+<p align="center">
+  <img src="docs/images/spend.png" alt="CodexBar.Net Usage and Spend window with summary tiles, a 30-day bar chart, per-model and per-project breakdowns and a token mix bar" width="560" />
+</p>
+<p align="center"><em>Usage &amp; Spend — daily chart, per-model and per-project breakdowns, and the token mix (demo data)</em></p>
 
 <p align="center">
   <img src="docs/images/outage-hub.png" alt="CodexBar.Net outage hub listing AWS, Claude and Microsoft 365 incidents above operational services" width="360" />
@@ -180,7 +189,7 @@ CodexBar.Windows.sln
 │   ├── StatusFetcher        Statuspage and Google Workspace incident feeds
 │   ├── OutageHub            Azure, AWS, Google Cloud, Microsoft 365 and Statuspage sources
 │   ├── Pace · HistoryStore  burn-rate projection and trend samples
-│   ├── CostScanner          local Codex / Claude Code log scan
+│   ├── CostScanner          local log scan: per day, model and project, long-context pricing
 │   ├── PriceCatalog         models.dev price cache
 │   └── TokenRefresher       opt-in sign-in renewal
 ├── src/CodexBar.App         WPF popup and Settings, WinForms NotifyIcon for the tray
@@ -195,7 +204,7 @@ CodexBar.Windows.sln
 | UI | WPF (popup, Settings), Windows Forms `NotifyIcon` (tray) |
 | Secret storage | Windows DPAPI, current user |
 | Cursor sign-in | Read-only SQLite through Windows' built-in `winsqlite3.dll` |
-| Tests | xunit, 67 tests |
+| Tests | xunit, 71 tests |
 | NuGet dependencies | None beyond the test framework |
 
 ## What Has Been Verified

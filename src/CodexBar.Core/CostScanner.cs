@@ -5,8 +5,8 @@ namespace CodexBar.Core;
 
 /// <summary>
 /// Estimates token spend from the session logs Codex and Claude Code write on this PC. A reduced port of the
-/// upstream cost scanner: it prices tokens at standard API list rates (no long-context or fast-mode tiers),
-/// so the figures are estimates of API value, not what a subscription actually charges.
+/// upstream cost scanner: every request is priced at API list rates, including the long-context tier, and
+/// totalled per day, per model and per project. The figures estimate API value, not what a subscription charges.
 /// </summary>
 public sealed partial class CostScanner
 {
@@ -36,29 +36,49 @@ public sealed partial class CostScanner
             zone ?? TimeZoneInfo.Local,
             this.ParseCodexFile);
 
-    /// <summary>USD for one usage record at list price, or null when the model has no known price.</summary>
-    public static double? Price(string model, long input, long cachedInput, long cacheWrite, long output)
+    /// <summary>USD for one request from the bundled table alone, or null when the model has no known price.</summary>
+    public static double? Price(string model, long input, long cachedInput, long cacheWrite, long output) =>
+        BundledPrice(model)?.Cost(input, cachedInput, cacheWrite, output);
+
+    /// <summary>The bundled list price for a model, including its long-context tier where one exists.</summary>
+    public static ModelPrice? BundledPrice(string model)
     {
-        if (FindRate(model) is not { } rate)
+        var name = DateSuffix().Replace(Normalize(model), string.Empty);
+
+        // Longest matching prefix wins, so "gpt-5.1-codex-mini" beats "gpt-5.1".
+        ModelPrice? best = null;
+        var bestLength = 0;
+        foreach (var (pattern, price) in Bundled)
         {
-            return null;
+            // A trailing '$' means exact match only, so an unknown newer version is left unpriced, not mispriced.
+            var exact = pattern.EndsWith('$');
+            var prefix = exact ? pattern[..^1] : pattern;
+            if (prefix.Length > bestLength
+                && (name == prefix || (!exact && name.StartsWith(prefix + "-", StringComparison.Ordinal))))
+            {
+                best = price;
+                bestLength = prefix.Length;
+            }
         }
 
-        return ((input * rate.Input) + (cachedInput * rate.CachedInput) + (cacheWrite * rate.CacheWrite)
-            + (output * rate.Output)) / 1_000_000;
+        return best;
     }
 
     /// <summary>The downloaded catalog knows current models; the bundled table covers older ones and offline use.</summary>
-    private double? PriceFor(string model, long input, long cachedInput, long cacheWrite, long output)
+    public ModelPrice? PriceOf(string model)
     {
         var name = Normalize(model);
-        if ((this.catalog?.Find(name) ?? this.catalog?.Find(DateSuffix().Replace(name, string.Empty))) is { } rate)
+        var listed = this.catalog?.Find(name) ?? this.catalog?.Find(DateSuffix().Replace(name, string.Empty));
+        var bundled = BundledPrice(model);
+        if (listed is null)
         {
-            return ((input * rate.Input) + (cachedInput * rate.CachedInput) + (cacheWrite * rate.CacheWrite)
-                + (output * rate.Output)) / 1_000_000;
+            return bundled;
         }
 
-        return Price(model, input, cachedInput, cacheWrite, output);
+        // The catalog sometimes omits a long-context tier the bundled table knows about; keep that tier.
+        return listed.LongContext is null && bundled?.LongContext is not null
+            ? listed with { LongContextThreshold = bundled.LongContextThreshold, LongContext = bundled.LongContext }
+            : listed;
     }
 
     private static string Normalize(string model)
@@ -73,29 +93,6 @@ public sealed partial class CostScanner
         }
 
         return name;
-    }
-
-    private static Rate? FindRate(string model)
-    {
-        var name = DateSuffix().Replace(Normalize(model), string.Empty);
-
-        // Longest matching prefix wins, so "gpt-5.1-codex-mini" beats "gpt-5.1".
-        Rate? best = null;
-        var bestLength = 0;
-        foreach (var (pattern, rate) in Rates)
-        {
-            // A trailing '$' means exact match only, so an unknown newer version is left unpriced, not mispriced.
-            var exact = pattern.EndsWith('$');
-            var prefix = exact ? pattern[..^1] : pattern;
-            if (prefix.Length > bestLength
-                && (name == prefix || (!exact && name.StartsWith(prefix + "-", StringComparison.Ordinal))))
-            {
-                best = rate;
-                bestLength = prefix.Length;
-            }
-        }
-
-        return best;
     }
 
     private CostSummary Scan(
@@ -120,9 +117,10 @@ public sealed partial class CostScanner
 
         // The same response can be copied into a resumed session's file; the key keeps it counted once.
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        long todayTokens = 0, monthTokens = 0;
-        double todayCost = 0, monthCost = 0;
-        var unpriced = false;
+        var days = Enumerable.Range(0, WindowDays).Select(offset => new Tally()).ToArray();
+        var models = new Dictionary<string, Tally>(StringComparer.OrdinalIgnoreCase);
+        var projects = new Dictionary<string, Tally>(StringComparer.OrdinalIgnoreCase);
+        var total = new Tally();
 
         foreach (var file in EnumerateLogs(roots, oldestWrite))
         {
@@ -134,19 +132,42 @@ public sealed partial class CostScanner
                     continue;
                 }
 
-                monthTokens += entry.Tokens;
-                monthCost += entry.Cost ?? 0;
-                unpriced |= entry.Cost is null && entry.Tokens > 0;
-                if (day == today)
-                {
-                    todayTokens += entry.Tokens;
-                    todayCost += entry.Cost ?? 0;
-                }
+                total.Add(entry);
+                days[day.DayNumber - firstDay.DayNumber].Add(entry);
+                Bucket(models, entry.Model).Add(entry);
+                Bucket(projects, entry.Project ?? "(unknown project)").Add(entry);
             }
         }
 
-        return new CostSummary(todayTokens, todayCost, monthTokens, monthCost, unpriced, now);
+        var todayTally = days[^1];
+        var report = new CostReport(
+            days.Select((tally, index) => new DailyCost(firstDay.AddDays(index), tally.Tokens, tally.Cost)).ToList(),
+            Rank(models),
+            Rank(projects),
+            total.Input,
+            total.CacheRead,
+            total.CacheWrite,
+            total.Output,
+            total.Requests,
+            total.LongContextRequests);
+        return new CostSummary(todayTally.Tokens, todayTally.Cost, total.Tokens, total.Cost, total.Unpriced, now, report);
     }
+
+    private static Tally Bucket(Dictionary<string, Tally> buckets, string name)
+    {
+        if (!buckets.TryGetValue(name, out var tally))
+        {
+            buckets[name] = tally = new Tally();
+        }
+
+        return tally;
+    }
+
+    private static List<CostBreakdown> Rank(Dictionary<string, Tally> buckets) =>
+        buckets.Select(entry => new CostBreakdown(entry.Key, entry.Value.Tokens, entry.Value.Cost, entry.Value.Requests, entry.Value.Unpriced))
+            .OrderByDescending(row => row.Cost)
+            .ThenByDescending(row => row.Tokens)
+            .ToList();
 
     private static IEnumerable<FileInfo> EnumerateLogs(IReadOnlyList<string> roots, DateTime oldestWriteUtc)
     {
@@ -204,6 +225,43 @@ public sealed partial class CostScanner
         }
     }
 
+    private UsageEntry Entry(
+        string? key,
+        DateTimeOffset timestamp,
+        string model,
+        string? project,
+        long input,
+        long cacheRead,
+        long cacheWrite,
+        long output)
+    {
+        var price = this.PriceOf(model);
+        return new UsageEntry(
+            key,
+            timestamp,
+            string.Intern(DateSuffix().Replace(Normalize(model), string.Empty)),
+            project is null ? null : string.Intern(project),
+            input,
+            cacheRead,
+            cacheWrite,
+            output,
+            price?.Cost(input, cacheRead, cacheWrite, output),
+            price?.IsLongContext(input, cacheRead, cacheWrite) == true);
+    }
+
+    /// <summary>The folder name of a working directory, which is how a project is labelled.</summary>
+    private static string? ProjectName(string? workingDirectory)
+    {
+        var trimmed = workingDirectory?.Trim().TrimEnd('\\', '/');
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return null;
+        }
+
+        var name = trimmed[(trimmed.LastIndexOfAny(['\\', '/']) + 1)..];
+        return name.Length == 0 ? trimmed : name;
+    }
+
     /// <summary>Claude Code: assistant lines carry <c>message.usage</c>; streaming repeats a message, last one wins.</summary>
     private List<UsageEntry> ParseClaudeFile(string path)
     {
@@ -235,8 +293,7 @@ public sealed partial class CostScanner
             var cacheRead = Count(usage.Get("cache_read_input_tokens"));
             var cacheWrite = Count(usage.Get("cache_creation_input_tokens"));
             var output = Count(usage.Get("output_tokens"));
-            var tokens = input + cacheRead + cacheWrite + output;
-            if (tokens == 0)
+            if (input + cacheRead + cacheWrite + output == 0)
             {
                 continue;
             }
@@ -247,7 +304,7 @@ public sealed partial class CostScanner
                 : requestId is not null ? $"{messageId}:{requestId}"
                 : root.Get("sessionId", "session_id").AsString() is { } session ? $"{session}:{messageId}"
                 : null;
-            var entry = new UsageEntry(key, timestamp, tokens, this.PriceFor(model, input, cacheRead, cacheWrite, output));
+            var entry = this.Entry(key, timestamp, model, ProjectName(root.Get("cwd").AsString()), input, cacheRead, cacheWrite, output);
             if (key is null)
             {
                 unkeyed.Add(entry);
@@ -263,17 +320,19 @@ public sealed partial class CostScanner
 
     /// <summary>
     /// Codex: <c>token_count</c> events carry cumulative totals; each entry is the growth since the previous event,
-    /// priced with the model named by the latest <c>turn_context</c>.
+    /// priced with the model named by the latest <c>turn_context</c> and filed under the session's working directory.
     /// </summary>
     private List<UsageEntry> ParseCodexFile(string path)
     {
         var entries = new List<UsageEntry>();
         var model = "gpt-5";
+        string? project = null;
         Totals? previous = null;
         var index = 0;
         foreach (var line in ReadLines(path))
         {
-            var isContext = line.Contains("\"turn_context\"", StringComparison.Ordinal);
+            var isContext = line.Contains("\"turn_context\"", StringComparison.Ordinal)
+                || line.Contains("\"session_meta\"", StringComparison.Ordinal);
             if (!isContext && !line.Contains("\"token_count\"", StringComparison.Ordinal))
             {
                 continue;
@@ -287,9 +346,11 @@ public sealed partial class CostScanner
 
             var root = document.RootElement;
             var payload = root.Get("payload");
-            if (root.Get("type").AsString() == "turn_context")
+            var type = root.Get("type").AsString();
+            if (type is "turn_context" or "session_meta")
             {
                 model = payload.Get("model").AsString() ?? model;
+                project = ProjectName(payload.Get("cwd").AsString()) ?? project;
                 continue;
             }
 
@@ -325,11 +386,7 @@ public sealed partial class CostScanner
 
             // Codex counts cached tokens inside input_tokens.
             var cached = Math.Min(delta.Cached, delta.Input);
-            entries.Add(new UsageEntry(
-                $"{path}#{index++}",
-                timestamp,
-                delta.Input + delta.Output,
-                this.PriceFor(model, delta.Input - cached, cached, 0, delta.Output)));
+            entries.Add(this.Entry($"{path}#{index++}", timestamp, model, project, delta.Input - cached, cached, 0, delta.Output));
         }
 
         return entries;
@@ -356,41 +413,102 @@ public sealed partial class CostScanner
 
     private readonly record struct Totals(long Input, long Cached, long Output);
 
-    private sealed record UsageEntry(string? Key, DateTimeOffset Timestamp, long Tokens, double? Cost);
+    private sealed record UsageEntry(
+        string? Key,
+        DateTimeOffset Timestamp,
+        string Model,
+        string? Project,
+        long Input,
+        long CacheRead,
+        long CacheWrite,
+        long Output,
+        double? Cost,
+        bool LongContext)
+    {
+        public long Tokens => this.Input + this.CacheRead + this.CacheWrite + this.Output;
+    }
 
     private sealed record CachedFile(long Length, DateTime WriteTimeUtc, List<UsageEntry> Entries);
 
-    /// <summary>USD per million tokens.</summary>
-    private readonly record struct Rate(double Input, double CachedInput, double CacheWrite, double Output);
+    private sealed class Tally
+    {
+        public long Input { get; private set; }
 
-    /// <summary>Standard list rates, taken from the upstream bundled price table (<c>CostUsagePricing.swift</c>).</summary>
-    private static readonly (string Prefix, Rate Rate)[] Rates =
+        public long CacheRead { get; private set; }
+
+        public long CacheWrite { get; private set; }
+
+        public long Output { get; private set; }
+
+        public double Cost { get; private set; }
+
+        public int Requests { get; private set; }
+
+        public int LongContextRequests { get; private set; }
+
+        public bool Unpriced { get; private set; }
+
+        public long Tokens => this.Input + this.CacheRead + this.CacheWrite + this.Output;
+
+        public void Add(UsageEntry entry)
+        {
+            this.Input += entry.Input;
+            this.CacheRead += entry.CacheRead;
+            this.CacheWrite += entry.CacheWrite;
+            this.Output += entry.Output;
+            this.Cost += entry.Cost ?? 0;
+            this.Requests++;
+            this.LongContextRequests += entry.LongContext ? 1 : 0;
+            this.Unpriced |= entry.Cost is null && entry.Tokens > 0;
+        }
+    }
+
+    private static ModelPrice Flat(double input, double cached, double write, double output) =>
+        new(new ModelRate(input, cached, write, output));
+
+    /// <summary>OpenAI's long-context tier: above 272K prompt tokens the request costs 2x input and 1.5x output.</summary>
+    private static ModelPrice Long272(double input, double cached, double output) => new(
+        new ModelRate(input, cached, 0, output),
+        272_000,
+        new ModelRate(input * 2, cached * 2, 0, output * 1.5));
+
+    /// <summary>Claude Sonnet 4 and 4.5: above 200K prompt tokens the request costs 2x input and 1.5x output.</summary>
+    private static ModelPrice Sonnet200 { get; } = new(
+        new ModelRate(3, 0.3, 3.75, 15),
+        200_000,
+        new ModelRate(6, 0.6, 7.5, 22.5));
+
+    /// <summary>
+    /// List prices in USD per million tokens, taken from the upstream bundled price table
+    /// (<c>CostUsagePricing.swift</c>), including its long-context thresholds.
+    /// </summary>
+    private static readonly (string Prefix, ModelPrice Price)[] Bundled =
     [
-        ("gpt-5", new Rate(1.25, 0.125, 0, 10)),
-        ("gpt-5-mini", new Rate(0.25, 0.025, 0, 2)),
-        ("gpt-5-nano", new Rate(0.05, 0.005, 0, 0.4)),
-        ("gpt-5-pro", new Rate(15, 15, 0, 120)),
-        ("gpt-5.1", new Rate(1.25, 0.125, 0, 10)),
-        ("gpt-5.1-codex-mini", new Rate(0.25, 0.025, 0, 2)),
-        ("gpt-5.2", new Rate(1.75, 0.175, 0, 14)),
-        ("gpt-5.2-pro", new Rate(21, 21, 0, 168)),
-        ("gpt-5.3-codex", new Rate(1.75, 0.175, 0, 14)),
-        ("gpt-5.3-codex-spark", new Rate(0, 0, 0, 0)),
-        ("gpt-5.4", new Rate(2.5, 0.25, 0, 15)),
-        ("gpt-5.4-mini", new Rate(0.75, 0.075, 0, 4.5)),
-        ("gpt-5.4-nano", new Rate(0.2, 0.02, 0, 1.25)),
-        ("gpt-5.4-pro", new Rate(30, 30, 0, 180)),
-        ("gpt-5.5", new Rate(5, 0.5, 0, 30)),
-        ("gpt-5.5-pro", new Rate(30, 30, 0, 180)),
-        ("claude-haiku-4-5", new Rate(1, 0.1, 1.25, 5)),
-        ("claude-sonnet-4$", new Rate(3, 0.3, 3.75, 15)),
-        ("claude-sonnet-4-5", new Rate(3, 0.3, 3.75, 15)),
-        ("claude-sonnet-4-6", new Rate(3, 0.3, 3.75, 15)),
-        ("claude-opus-4$", new Rate(15, 1.5, 18.75, 75)),
-        ("claude-opus-4-1", new Rate(15, 1.5, 18.75, 75)),
-        ("claude-opus-4-5", new Rate(5, 0.5, 6.25, 25)),
-        ("claude-opus-4-6", new Rate(5, 0.5, 6.25, 25)),
-        ("claude-opus-4-7", new Rate(5, 0.5, 6.25, 25)),
-        ("claude-opus-4-8", new Rate(5, 0.5, 6.25, 25)),
+        ("gpt-5", Flat(1.25, 0.125, 0, 10)),
+        ("gpt-5-mini", Flat(0.25, 0.025, 0, 2)),
+        ("gpt-5-nano", Flat(0.05, 0.005, 0, 0.4)),
+        ("gpt-5-pro", Flat(15, 15, 0, 120)),
+        ("gpt-5.1", Flat(1.25, 0.125, 0, 10)),
+        ("gpt-5.1-codex-mini", Flat(0.25, 0.025, 0, 2)),
+        ("gpt-5.2", Flat(1.75, 0.175, 0, 14)),
+        ("gpt-5.2-pro", Flat(21, 21, 0, 168)),
+        ("gpt-5.3-codex", Flat(1.75, 0.175, 0, 14)),
+        ("gpt-5.3-codex-spark", Flat(0, 0, 0, 0)),
+        ("gpt-5.4", Long272(2.5, 0.25, 15)),
+        ("gpt-5.4-mini", Flat(0.75, 0.075, 0, 4.5)),
+        ("gpt-5.4-nano", Flat(0.2, 0.02, 0, 1.25)),
+        ("gpt-5.4-pro", Long272(30, 30, 180)),
+        ("gpt-5.5", Long272(5, 0.5, 30)),
+        ("gpt-5.5-pro", Long272(30, 30, 180)),
+        ("claude-haiku-4-5", Flat(1, 0.1, 1.25, 5)),
+        ("claude-sonnet-4$", Sonnet200),
+        ("claude-sonnet-4-5", Sonnet200),
+        ("claude-sonnet-4-6", Flat(3, 0.3, 3.75, 15)),
+        ("claude-opus-4$", Flat(15, 1.5, 18.75, 75)),
+        ("claude-opus-4-1", Flat(15, 1.5, 18.75, 75)),
+        ("claude-opus-4-5", Flat(5, 0.5, 6.25, 25)),
+        ("claude-opus-4-6", Flat(5, 0.5, 6.25, 25)),
+        ("claude-opus-4-7", Flat(5, 0.5, 6.25, 25)),
+        ("claude-opus-4-8", Flat(5, 0.5, 6.25, 25)),
     ];
 }

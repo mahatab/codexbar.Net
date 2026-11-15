@@ -15,11 +15,12 @@ internal sealed class TrayIcon : IDisposable
     private readonly NotifyIcon icon;
     private IntPtr currentHandle;
 
-    public TrayIcon(Action onClick, Action onRefresh, Action onSettings, Action onQuit)
+    public TrayIcon(Action onClick, Action onRefresh, Action onSpend, Action onSettings, Action onQuit)
     {
         var menu = new ContextMenuStrip();
         menu.Items.Add("Open CodexBar", null, (_, _) => onClick());
         menu.Items.Add("Refresh now", null, (_, _) => onRefresh());
+        menu.Items.Add("Usage && spend…", null, (_, _) => onSpend());
         menu.Items.Add("Settings…", null, (_, _) => onSettings());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quit", null, (_, _) => onQuit());

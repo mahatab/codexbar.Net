@@ -34,6 +34,7 @@ public partial class App : Application
     private string configPath = string.Empty;
     private PopupWindow? popup;
     private SettingsWindow? settings;
+    private SpendWindow? spend;
     private DispatcherTimer? refreshTimer;
     private DispatcherTimer? clockTimer;
 
@@ -58,6 +59,10 @@ public partial class App : Application
                 var demoStore = new UsageStore(demoContext, demoConfig);
                 var window = new SettingsWindow(demoStore, demoConfig, this.http, @"%APPDATA%\CodexBar\config.json", () => { });
                 Artwork.RenderWindow(window, Path.Combine(folder, "settings.png"));
+                var demoNow = DateTimeOffset.UtcNow;
+                Artwork.RenderWindow(
+                    new SpendWindow(() => [("Claude", DemoData.Cost(demoNow, 1.0)), ("Codex", DemoData.Cost(demoNow, 0.42))]),
+                    Path.Combine(folder, "spend.png"));
                 this.Shutdown(0);
             }
             catch (Exception error)
@@ -88,6 +93,7 @@ public partial class App : Application
         this.popup = new PopupWindow();
         this.popup.RefreshRequested += this.RefreshNow;
         this.popup.SettingsRequested += this.ShowSettings;
+        this.popup.SpendRequested += this.ShowSpend;
         this.popup.QuitRequested += this.Quit;
 
         this.store.Changed += () => this.Dispatcher.BeginInvoke(this.UpdateUi);
@@ -188,6 +194,23 @@ public partial class App : Application
         this.settings.Activate();
     }
 
+    private void ShowSpend()
+    {
+        if (this.spend is { IsLoaded: true })
+        {
+            this.spend.Activate();
+            return;
+        }
+
+        this.spend = new SpendWindow(() => this.store.EnabledProviders()
+            .Select(provider => (provider.DisplayName, this.store.State(provider.Id).Cost))
+            .Where(entry => entry.Cost is not null)
+            .Select(entry => (entry.DisplayName, entry.Cost!))
+            .ToList());
+        this.spend.Show();
+        this.spend.Activate();
+    }
+
     private void Quit() => this.Shutdown();
 
     private void ShowAlert(UsageAlert alert)
@@ -247,6 +270,10 @@ public partial class App : Application
             refreshing,
             this.config.Current.OutageHub ? OutageRow.Build(states, this.store.Outages, this.Resources) : null);
         this.UpdateTrays(states);
+        if (this.spend is { IsLoaded: true })
+        {
+            this.spend.Reload();
+        }
     }
 
     /// <summary>Keeps either one shared tray icon or one per enabled provider, as chosen in Settings.</summary>
@@ -262,7 +289,7 @@ public partial class App : Application
 
         foreach (var key in wanted.Where(key => !this.trays.ContainsKey(key)))
         {
-            this.trays[key] = new TrayIcon(this.TogglePopup, this.RefreshNow, this.ShowSettings, this.Quit);
+            this.trays[key] = new TrayIcon(this.TogglePopup, this.RefreshNow, this.ShowSpend, this.ShowSettings, this.Quit);
         }
 
         if (perProvider)
@@ -397,6 +424,16 @@ public partial class App : Application
                 {
                     summary.AppendLine($"  cost today=${cost.TodayCost:0.00} ({cost.TodayTokens} tokens) 30d=${cost.MonthCost:0.00} "
                         + $"({cost.MonthTokens} tokens) unpriced={cost.HasUnpricedModels}");
+                    if (cost.Report is { } report)
+                    {
+                        // Project names are left out on purpose: this file is meant to be safe to share.
+                        summary.AppendLine($"  requests={report.Requests} longContext={report.LongContextRequests} "
+                            + $"projects={report.Projects.Count} activeDays={report.Days.Count(day => day.Tokens > 0)}");
+                        foreach (var model in report.Models.Take(6))
+                        {
+                            summary.AppendLine($"  model {model.Name}: ${model.Cost:0.00} {model.Tokens} tokens {model.Requests} requests");
+                        }
+                    }
                 }
             }
 
@@ -487,6 +524,37 @@ internal static class DemoData
             (new GeminiProvider(), new ProviderState("gemini", gemini, null, null, false)),
             (new GrokProvider(), new ProviderState("grok", grok, null, null, false)),
         ];
+    }
+
+    /// <summary>A made-up month of spend with weekday peaks, a few models and projects, for the spend window.</summary>
+    public static CostSummary Cost(DateTimeOffset now, double scale)
+    {
+        var today = DateOnly.FromDateTime(now.LocalDateTime);
+        var days = Enumerable.Range(0, CostScanner.WindowDays).Select(index =>
+        {
+            var day = today.AddDays(index - (CostScanner.WindowDays - 1));
+            var weekend = day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+            var cost = scale * (weekend ? 4 : 18) * (1 + (0.45 * Math.Sin(index * 1.7))) * (0.6 + (index / 60d));
+            return new DailyCost(day, (long)(cost * 420_000), Math.Round(cost, 2));
+        }).ToList();
+        var total = days.Sum(day => day.Cost);
+        var tokens = days.Sum(day => day.Tokens);
+        CostBreakdown Share(string name, double share, int requests) =>
+            new(name, (long)(tokens * share), Math.Round(total * share, 2), (int)(requests * scale), false);
+        var report = new CostReport(
+            days,
+            [Share("claude-opus-4-8", 0.61, 5200), Share("claude-sonnet-4-6", 0.31, 3900), Share("claude-haiku-4-5", 0.08, 2400)],
+            [
+                Share("storefront-api", 0.38, 4100), Share("mobile-app", 0.27, 3000), Share("data-pipeline", 0.19, 2200),
+                Share("docs-site", 0.11, 1500), Share("infra", 0.05, 700),
+            ],
+            (long)(tokens * 0.04),
+            (long)(tokens * 0.86),
+            (long)(tokens * 0.07),
+            (long)(tokens * 0.03),
+            (int)(11_500 * scale),
+            (int)(310 * scale));
+        return new CostSummary(days[^1].Tokens, days[^1].Cost, tokens, total, false, now, report);
     }
 
     /// <summary>Made-up outage hub readings: one incident, the rest healthy.</summary>

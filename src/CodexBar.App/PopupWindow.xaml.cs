@@ -37,6 +37,8 @@ public partial class PopupWindow : Window
 
     public event Action? SettingsRequested;
 
+    public event Action? SpendRequested;
+
     public event Action? QuitRequested;
 
     public bool HideWhenDeactivated { get; set; } = true;
@@ -108,6 +110,8 @@ public partial class PopupWindow : Window
     private void OnRefresh(object sender, RoutedEventArgs e) => this.RefreshRequested?.Invoke();
 
     private void OnSettings(object sender, RoutedEventArgs e) => this.SettingsRequested?.Invoke();
+
+    private void OnSpend(object sender, RoutedEventArgs e) => this.SpendRequested?.Invoke();
 
     private void OnQuit(object sender, RoutedEventArgs e) => this.QuitRequested?.Invoke();
 

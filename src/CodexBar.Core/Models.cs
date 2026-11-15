@@ -89,4 +89,23 @@ public sealed record CostSummary(
     long MonthTokens,
     double MonthCost,
     bool HasUnpricedModels,
-    DateTimeOffset ScannedAt);
+    DateTimeOffset ScannedAt,
+    CostReport? Report = null);
+
+/// <summary>One calendar day of local usage.</summary>
+public sealed record DailyCost(DateOnly Day, long Tokens, double Cost);
+
+/// <summary>Usage attributed to one model or one project over the scan window.</summary>
+public sealed record CostBreakdown(string Name, long Tokens, double Cost, int Requests, bool HasUnpricedModels);
+
+/// <summary>The detail behind a <see cref="CostSummary"/>: the 30-day window split by day, model and project.</summary>
+public sealed record CostReport(
+    IReadOnlyList<DailyCost> Days,
+    IReadOnlyList<CostBreakdown> Models,
+    IReadOnlyList<CostBreakdown> Projects,
+    long InputTokens,
+    long CacheReadTokens,
+    long CacheWriteTokens,
+    long OutputTokens,
+    int Requests,
+    int LongContextRequests);

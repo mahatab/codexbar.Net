@@ -378,10 +378,10 @@ public sealed class FeatureTests : IDisposable
         await catalog.EnsureFreshAsync(http, Now.AddHours(2), CancellationToken.None);
 
         Assert.Equal(1, downloads);
-        Assert.Equal(new ModelRate(4, 0.2, 5, 20), catalog.Find("fictional-model-9"));
-        Assert.Equal(new ModelRate(1, 1, 1, 2), catalog.Find("fictional-gpt"));
+        Assert.Equal(new ModelRate(4, 0.2, 5, 20), catalog.Find("fictional-model-9")!.Standard);
+        Assert.Equal(new ModelRate(1, 1, 1, 2), catalog.Find("fictional-gpt")!.Standard);
         Assert.Null(catalog.Find("ignored"));
-        Assert.Equal(new ModelRate(4, 0.2, 5, 20), new PriceCatalog(cachePath).Find("FICTIONAL-MODEL-9"));
+        Assert.Equal(new ModelRate(4, 0.2, 5, 20), new PriceCatalog(cachePath).Find("FICTIONAL-MODEL-9")!.Standard);
 
         this.Write(
             ".claude/projects/demo/session.jsonl",
@@ -390,6 +390,101 @@ public sealed class FeatureTests : IDisposable
 
         Assert.Equal(24, summary.TodayCost, 6);
         Assert.False(summary.HasUnpricedModels);
+    }
+
+    [Fact]
+    public void Long_context_rates_apply_to_the_whole_request_only_above_the_threshold()
+    {
+        // GPT-5.5: $5 in / $0.50 cached / $30 out; above 272K prompt tokens 2x input and 1.5x output.
+        var price = CostScanner.BundledPrice("gpt-5.5")!;
+        Assert.Equal(272_000, price.LongContextThreshold);
+        Assert.False(price.IsLongContext(172_000, 100_000, 0));
+        Assert.True(price.IsLongContext(172_001, 100_000, 0));
+        Assert.Equal(((172_000 * 5.0) + (100_000 * 0.5) + (1000 * 30.0)) / 1_000_000, price.Cost(172_000, 100_000, 0, 1000), 9);
+        Assert.Equal(((172_001 * 10.0) + (100_000 * 1.0) + (1000 * 45.0)) / 1_000_000, price.Cost(172_001, 100_000, 0, 1000), 9);
+
+        // Claude Sonnet 4.5: cache writes count toward the 200K prompt length.
+        var sonnet = CostScanner.BundledPrice("claude-sonnet-4-5-20250929")!;
+        Assert.Equal(((100_000 * 6.0) + (50_000 * 0.6) + (60_000 * 7.5) + (10 * 22.5)) / 1_000_000, sonnet.Cost(100_000, 50_000, 60_000, 10), 9);
+        Assert.Null(CostScanner.BundledPrice("claude-sonnet-4-6")!.LongContext);
+    }
+
+    [Fact]
+    public void Price_catalog_reads_long_context_tiers_and_keeps_them_across_a_reload()
+    {
+        const string body = """
+            {"openai":{"models":{
+               "tiered":{"cost":{"input":4,"output":20,"cache_read":0.4,"cache_write":5,
+                 "tiers":[{"input":8,"output":30,"cache_read":0.8,"cache_write":10,"tier":{"type":"context","size":272000}}]}},
+               "legacy":{"cost":{"input":3,"output":15,"cache_read":0.3,"context_over_200k":{"input":6,"output":22.5}}},
+               "flat":{"cost":{"input":1,"output":2}}}}}
+            """;
+
+        var parsed = PriceCatalog.Parse(body);
+
+        Assert.Equal(new ModelPrice(new ModelRate(4, 0.4, 5, 20), 272_000, new ModelRate(8, 0.8, 10, 30)), parsed["tiered"]);
+        // The older field gives no cache rates above the threshold; they scale with the input rate.
+        Assert.Equal(new ModelPrice(new ModelRate(3, 0.3, 3, 15), 200_000, new ModelRate(6, 0.6, 6, 22.5)), parsed["legacy"]);
+        Assert.Null(parsed["flat"].LongContext);
+    }
+
+    [Fact]
+    public void Cost_report_breaks_usage_down_by_day_model_and_project()
+    {
+        string Claude(string id, string model, string cwd, int input, string time) => JsonSerializer.Serialize(new
+        {
+            type = "assistant",
+            timestamp = time,
+            requestId = id,
+            cwd,
+            message = new { id, model, usage = new { input_tokens = input, output_tokens = 0 } },
+        });
+        this.Write(
+            ".claude/projects/a/one.jsonl",
+            string.Join('\n',
+            [
+                Claude("1", "claude-sonnet-4-5", @"C:\dev\projects\alpha", 1_000_000, "2026-11-13T09:00:00Z"),
+                Claude("2", "claude-sonnet-4-5", @"C:\dev\projects\alpha\", 250_000, "2026-11-12T09:00:00Z"),
+                Claude("3", "claude-haiku-4-5-20251001", "/home/dev/beta", 1_000_000, "2026-11-12T10:00:00Z"),
+                Claude("4", "fictional-model-9", @"C:\dev\projects\alpha", 500, "2026-11-12T11:00:00Z"),
+            ]));
+
+        var summary = new CostScanner().ScanClaude(Path.Combine(this.directory, ".claude"), Now, TimeZoneInfo.Utc);
+        var report = summary.Report!;
+
+        Assert.Equal(CostScanner.WindowDays, report.Days.Count);
+        Assert.Equal(new DateOnly(2026, 11, 13), report.Days[^1].Day);
+        // 1M input on a long-context request costs $6; the 250K request the day before costs $1.50, Haiku $1.
+        Assert.Equal(6.0, report.Days[^1].Cost, 9);
+        Assert.Equal(2.5, report.Days[^2].Cost, 9);
+        Assert.Equal(0, report.Days[0].Tokens);
+        Assert.Equal(["claude-sonnet-4-5", "claude-haiku-4-5", "fictional-model-9"], report.Models.Select(row => row.Name));
+        Assert.Equal([7.5, 1.0, 0.0], report.Models.Select(row => row.Cost));
+        Assert.True(report.Models[2].HasUnpricedModels);
+        Assert.Equal(["alpha", "beta"], report.Projects.Select(row => row.Name));
+        Assert.Equal((7.5, 3), (report.Projects[0].Cost, report.Projects[0].Requests));
+        Assert.Equal((4, 2, 2_250_500L), (report.Requests, report.LongContextRequests, report.InputTokens));
+    }
+
+    [Fact]
+    public void Codex_usage_is_filed_under_the_session_working_directory()
+    {
+        this.Write(
+            ".codex/sessions/2026/11/13/rollout.jsonl",
+            string.Join('\n',
+            [
+                """{"timestamp":"2026-11-13T08:00:00Z","type":"session_meta","payload":{"cwd":"C:\\dev\\projects\\gamma"}}""",
+                """{"timestamp":"2026-11-13T08:00:00Z","type":"turn_context","payload":{"model":"gpt-5.5"}}""",
+                """{"timestamp":"2026-11-13T08:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":300000,"cached_input_tokens":0,"output_tokens":1000}}}}""",
+            ]));
+
+        var report = new CostScanner().ScanCodex(Path.Combine(this.directory, ".codex"), Now, TimeZoneInfo.Utc).Report!;
+
+        var project = Assert.Single(report.Projects);
+        Assert.Equal("gamma", project.Name);
+        Assert.Equal(((300_000 * 10.0) + (1000 * 45.0)) / 1_000_000, project.Cost, 9);
+        Assert.Equal(1, report.LongContextRequests);
+        Assert.Equal("gpt-5.5", Assert.Single(report.Models).Name);
     }
 
     // ----- Grok -----
