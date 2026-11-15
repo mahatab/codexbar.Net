@@ -25,6 +25,9 @@
 
 CodexBar.Net is a native **Windows notification-area app** that shows how much of your **Codex, Claude, Cursor, Gemini, Copilot, Grok and OpenRouter** limits you have used, when each one resets, and whether you will run out first. Its **outage hub** also watches Azure, AWS, Google Cloud, Microsoft 365, Cloudflare and GitHub, so one click tells you what is down. It is a C#/.NET rewrite of the core of [CodexBar](https://github.com/steipete/CodexBar), the macOS menu bar app by Peter Steinberger. It needs no Swift toolchain, no WSL and no CLI wrapper: one `CodexBar.exe`.
 
+> [!IMPORTANT]
+> **This is a partial port, not the full CodexBar.** It supports 7 of CodexBar's roughly 110 providers and has no browser-cookie import, multiple accounts, widgets, CLI, plugins or auto-update. See [What Is Missing](#what-is-missing) for the full list before you rely on it.
+
 <p align="center">
   <img src="docs/images/popup-dark.png" alt="CodexBar.Net popup in dark mode showing Codex, Claude, Cursor, Gemini and Grok cards with usage bars, trend lines, pace and cost estimates" width="340" />
   &nbsp;&nbsp;
@@ -221,10 +224,39 @@ CodexBar.Net is young. Being straight about what has and has not been exercised:
 
 If a provider misbehaves for you, please [open an issue](https://github.com/mahatab/codexbar.Net/issues) with the card's error text (never a token or cookie).
 
-## Not Ported From the macOS App
+## What Is Missing
 
-The macOS CodexBar supports about 110 providers and much more. This port does not have browser-cookie import, CLI fallback sources, multiple accounts, widgets, the `codexbar` CLI, plugins, auto-update or a signed installer.
+CodexBar.Net is **not a complete port**. It covers the everyday core of CodexBar for a handful of providers, and leaves a lot out. If you depend on anything in this table, the macOS app (or one of the WSL-based Windows wrappers) is the better choice today.
 
+| Area | CodexBar (macOS) | CodexBar.Net |
+|------|------------------|--------------|
+| **Providers** | About 110 | 7: Codex, Claude, Cursor, Gemini, Copilot, Grok, OpenRouter |
+| **Sign-in sources** | Several per provider with automatic fallback: OAuth, browser cookies, CLI probes, web sessions | One or two per provider; no fallback chain |
+| **Browser cookie import** | Reads sessions from Safari, Chrome, Firefox and others | ❌ Not available. Cursor accepts a pasted cookie only |
+| **Multiple accounts** | Several accounts per provider, workspaces, account switching | ❌ One account per provider |
+| **Token renewal** | Built in, with its own credential cache | ⚠️ Opt-in and experimental |
+| **Cost and spend** | Reporting periods, per-session detail, fast-mode and historical pricing, cross-machine Cursor cost | 30-day window with per-day, per-model and per-project totals at current list prices |
+| **Usage history** | Burndown charts, utilization history, history-based forecasts | A one-week trend line per limit |
+| **Provider status** | Component-level breakdown per status page | Overall indicator only |
+| **Menu bar / tray icon** | Brand icons, custom layouts, per-metric choices | Two-bar meter, optional letter per provider |
+| **Notifications** | Predictive warnings, reset celebrations, hooks | Thresholds, reset, sign-in expired, outage |
+| **Widgets** | Desktop widgets | ❌ |
+| **CLI and local server** | `codexbar usage`, `codexbar cost`, dashboard server | ❌ |
+| **Plugins and custom providers** | JavaScript plugins, custom provider definitions | ❌ Custom status pages only |
+| **Diagnostics** | Diagnostic export, storage footprint | ❌ |
+| **Localization** | Multiple languages | ❌ English only |
+| **Distribution** | Signed and notarized, auto-update, Homebrew | Unsigned exe and an install script; no auto-update |
+
+Shallower even where a provider is supported:
+
+- **Codex** — no workspace switching, no CLI fallback; `chatgpt_base_url` overrides in `config.toml` are ignored
+- **Claude** — OAuth usage only; no web-session or CLI fallback, no Admin API spend, no saved limit-reset credits
+- **Cursor** — no team or enterprise budgets, no dashboard cost feed; encrypted app sign-ins cannot be read
+- **Gemini** — CLI quotas only; no Gemini app (web) limits
+- **Grok** — CLI billing proxy only; no `grok agent` RPC, cookie or gRPC fallback, no reset coupons
+- **Copilot** and **OpenRouter** — the basic quota and balance views only
+
+One thing CodexBar.Net has that the macOS app does not: the **outage hub** for cloud and productivity services.
 ## Privacy
 
 - Credential files that belong to other tools are read only, unless you switch on sign-in renewal.
